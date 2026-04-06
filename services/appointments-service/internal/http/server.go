@@ -20,6 +20,7 @@ type Config struct {
 type Server struct {
 	config Config
 	repo   appointmentsRepository
+	dir    directoryLookup
 	mux    *http.ServeMux
 }
 
@@ -31,10 +32,16 @@ type appointmentsRepository interface {
 	CancelAppointment(ctx context.Context, appointmentID string) (appointments.Appointment, error)
 }
 
-func NewServer(config Config, repo appointmentsRepository) *Server {
+type directoryLookup interface {
+	ProfessionalExists(ctx context.Context, professionalID string) (bool, error)
+	PatientExists(ctx context.Context, patientID string) (bool, error)
+}
+
+func NewServer(config Config, repo appointmentsRepository, dir directoryLookup) *Server {
 	server := &Server{
 		config: config,
 		repo:   repo,
+		dir:    dir,
 		mux:    http.NewServeMux(),
 	}
 
@@ -90,6 +97,20 @@ func (s *Server) bulkSlots(w http.ResponseWriter, r *http.Request) {
 	var request appointments.BulkCreateSlotsParams
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if err := appointments.ValidateBulkCreateSlotsParams(request); errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid slot bulk request")
+		return
+	}
+
+	professionalExists, err := s.dir.ProfessionalExists(r.Context(), request.ProfessionalID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return
+	}
+	if !professionalExists {
+		writeError(w, http.StatusBadRequest, "professional not found")
 		return
 	}
 
@@ -179,6 +200,30 @@ func (s *Server) createAppointment(w http.ResponseWriter, r *http.Request) {
 	var request appointments.CreateAppointmentParams
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if err := appointments.ValidateCreateAppointmentParams(request); errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid appointment request")
+		return
+	}
+
+	professionalExists, err := s.dir.ProfessionalExists(r.Context(), request.ProfessionalID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return
+	}
+	if !professionalExists {
+		writeError(w, http.StatusBadRequest, "professional not found")
+		return
+	}
+
+	patientExists, err := s.dir.PatientExists(r.Context(), request.PatientID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return
+	}
+	if !patientExists {
+		writeError(w, http.StatusBadRequest, "patient not found")
 		return
 	}
 

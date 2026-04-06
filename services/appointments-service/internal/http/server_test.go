@@ -11,11 +11,14 @@ import (
 	"time"
 
 	"clinic-platform/services/appointments-service/internal/appointments"
+	"clinic-platform/services/appointments-service/internal/directory"
 )
 
 func TestBulkSlotsReturnsCreatedItems(t *testing.T) {
+	repoCalled := false
 	repo := &stubAppointmentsRepository{
 		createSlotsBulkFn: func(_ context.Context, params appointments.BulkCreateSlotsParams) ([]appointments.AvailabilitySlot, error) {
+			repoCalled = true
 			if params.SlotDurationMinutes != 30 {
 				t.Fatalf("slot_duration_minutes = %d, want 30", params.SlotDurationMinutes)
 			}
@@ -23,7 +26,7 @@ func TestBulkSlotsReturnsCreatedItems(t *testing.T) {
 		},
 	}
 
-	server := NewServer(testAppointmentsConfig(), repo)
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalExists: true})
 	recorder := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"professional_id":"550e8400-e29b-41d4-a716-446655440000","date":"2026-04-10","start_time":"09:00","end_time":"10:00","slot_duration_minutes":30}`)
 	request := httptest.NewRequest(http.MethodPost, "/slots/bulk", body)
@@ -33,16 +36,21 @@ func TestBulkSlotsReturnsCreatedItems(t *testing.T) {
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
 	}
+	if !repoCalled {
+		t.Fatal("expected repo to be called")
+	}
 }
 
 func TestCreateAppointmentReturnsConflict(t *testing.T) {
+	repoCalled := false
 	repo := &stubAppointmentsRepository{
 		createAppointmentFn: func(context.Context, appointments.CreateAppointmentParams) (appointments.Appointment, error) {
+			repoCalled = true
 			return appointments.Appointment{}, appointments.ErrConflict
 		},
 	}
 
-	server := NewServer(testAppointmentsConfig(), repo)
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalExists: true, patientExists: true})
 	recorder := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"slot_id":"550e8400-e29b-41d4-a716-446655440000","patient_id":"550e8400-e29b-41d4-a716-446655440001","professional_id":"550e8400-e29b-41d4-a716-446655440002"}`)
 	request := httptest.NewRequest(http.MethodPost, "/appointments", body)
@@ -51,6 +59,9 @@ func TestCreateAppointmentReturnsConflict(t *testing.T) {
 
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusConflict)
+	}
+	if !repoCalled {
+		t.Fatal("expected repo to be called")
 	}
 }
 
@@ -61,7 +72,7 @@ func TestListAppointmentsReturnsItems(t *testing.T) {
 		},
 	}
 
-	server := NewServer(testAppointmentsConfig(), repo)
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/appointments?status=booked", nil)
 
@@ -90,7 +101,7 @@ func TestCancelAppointmentReturnsAppointment(t *testing.T) {
 		},
 	}
 
-	server := NewServer(testAppointmentsConfig(), repo)
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPatch, "/appointments/appt-1/cancel", nil)
 
@@ -108,7 +119,7 @@ func TestListSlotsReturnsBadRequestOnInvalidFilters(t *testing.T) {
 		},
 	}
 
-	server := NewServer(testAppointmentsConfig(), repo)
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/slots?date=bad-date", nil)
 
@@ -119,12 +130,103 @@ func TestListSlotsReturnsBadRequestOnInvalidFilters(t *testing.T) {
 	}
 }
 
+func TestBulkSlotsReturnsBadRequestWhenProfessionalMissing(t *testing.T) {
+	repo := &stubAppointmentsRepository{}
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalExists: false})
+	recorder := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"professional_id":"550e8400-e29b-41d4-a716-446655440000","date":"2026-04-10","start_time":"09:00","end_time":"10:00","slot_duration_minutes":30}`)
+	request := httptest.NewRequest(http.MethodPost, "/slots/bulk", body)
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestBulkSlotsReturnsServiceUnavailableWhenDirectoryFails(t *testing.T) {
+	repo := &stubAppointmentsRepository{}
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalErr: directory.ErrUnavailable})
+	recorder := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"professional_id":"550e8400-e29b-41d4-a716-446655440000","date":"2026-04-10","start_time":"09:00","end_time":"10:00","slot_duration_minutes":30}`)
+	request := httptest.NewRequest(http.MethodPost, "/slots/bulk", body)
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestCreateAppointmentReturnsBadRequestWhenPatientMissing(t *testing.T) {
+	repo := &stubAppointmentsRepository{}
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalExists: true, patientExists: false})
+	recorder := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"slot_id":"550e8400-e29b-41d4-a716-446655440000","patient_id":"550e8400-e29b-41d4-a716-446655440001","professional_id":"550e8400-e29b-41d4-a716-446655440002"}`)
+	request := httptest.NewRequest(http.MethodPost, "/appointments", body)
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreateAppointmentReturnsBadRequestWhenProfessionalMissing(t *testing.T) {
+	repo := &stubAppointmentsRepository{}
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalExists: false})
+	recorder := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"slot_id":"550e8400-e29b-41d4-a716-446655440000","patient_id":"550e8400-e29b-41d4-a716-446655440001","professional_id":"550e8400-e29b-41d4-a716-446655440002"}`)
+	request := httptest.NewRequest(http.MethodPost, "/appointments", body)
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreateAppointmentReturnsServiceUnavailableWhenDirectoryFails(t *testing.T) {
+	repo := &stubAppointmentsRepository{}
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalExists: true, patientErr: directory.ErrUnavailable})
+	recorder := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"slot_id":"550e8400-e29b-41d4-a716-446655440000","patient_id":"550e8400-e29b-41d4-a716-446655440001","professional_id":"550e8400-e29b-41d4-a716-446655440002"}`)
+	request := httptest.NewRequest(http.MethodPost, "/appointments", body)
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+}
+
 type stubAppointmentsRepository struct {
 	createSlotsBulkFn   func(context.Context, appointments.BulkCreateSlotsParams) ([]appointments.AvailabilitySlot, error)
 	listSlotsFn         func(context.Context, appointments.SlotFilters) ([]appointments.AvailabilitySlot, error)
 	createAppointmentFn func(context.Context, appointments.CreateAppointmentParams) (appointments.Appointment, error)
 	listAppointmentsFn  func(context.Context, appointments.AppointmentFilters) ([]appointments.Appointment, error)
 	cancelAppointmentFn func(context.Context, string) (appointments.Appointment, error)
+}
+
+type stubDirectoryLookup struct {
+	professionalExists bool
+	professionalErr    error
+	patientExists      bool
+	patientErr         error
+}
+
+func (s *stubDirectoryLookup) ProfessionalExists(context.Context, string) (bool, error) {
+	if s.professionalErr != nil {
+		return false, s.professionalErr
+	}
+	return s.professionalExists, nil
+}
+
+func (s *stubDirectoryLookup) PatientExists(context.Context, string) (bool, error) {
+	if s.patientErr != nil {
+		return false, s.patientErr
+	}
+	return s.patientExists, nil
 }
 
 func (s *stubAppointmentsRepository) CreateSlotsBulk(ctx context.Context, params appointments.BulkCreateSlotsParams) ([]appointments.AvailabilitySlot, error) {

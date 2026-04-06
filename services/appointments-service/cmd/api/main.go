@@ -4,8 +4,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"clinic-platform/services/appointments-service/internal/appointments"
+	"clinic-platform/services/appointments-service/internal/directory"
 	internalhttp "clinic-platform/services/appointments-service/internal/http"
 )
 
@@ -13,6 +15,7 @@ func main() {
 	port := envOrDefault("PORT", "8082")
 	appEnv := envOrDefault("APP_ENV", "local")
 	dsn := postgresDSN()
+	directoryBaseURL := envOrDefault("DIRECTORY_SERVICE_BASE_URL", "http://localhost:8081")
 
 	db, err := appointments.OpenDB(dsn)
 	if err != nil {
@@ -20,11 +23,16 @@ func main() {
 	}
 	defer db.Close()
 
+	directoryClient, err := directory.NewClient(directoryBaseURL, &http.Client{Timeout: 3 * time.Second})
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	handler := internalhttp.NewServer(internalhttp.Config{
 		ServiceName: "appointments-service",
 		Version:     "v0.1.0",
 		Environment: appEnv,
-	}, appointments.NewRepository(db))
+	}, appointments.NewRepository(db), directoryClient)
 
 	log.Printf("starting appointments-service on :%s", port)
 

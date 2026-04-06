@@ -71,6 +71,15 @@ type Appointment struct {
 	CancelledAt    *time.Time `json:"cancelled_at,omitempty"`
 }
 
+func ValidateBulkCreateSlotsParams(params BulkCreateSlotsParams) error {
+	_, _, _, _, err := parseBulkSlotInputs(params)
+	return err
+}
+
+func ValidateCreateAppointmentParams(params CreateAppointmentParams) error {
+	return validateAppointmentParams(params)
+}
+
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
