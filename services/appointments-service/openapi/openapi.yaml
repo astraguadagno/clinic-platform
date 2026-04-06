@@ -82,7 +82,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SlotListResponse'
         '400':
-          description: Invalid JSON body or validation failure
+          description: Invalid JSON body, validation failure, or missing professional reference
           content:
             application/json:
               schema:
@@ -94,6 +94,9 @@ paths:
                 invalid_slot_bulk_request:
                   value:
                     error: invalid slot bulk request
+                professional_not_found:
+                  value:
+                    error: professional not found
         '409':
           description: Slot range conflicts with existing slots
           content:
@@ -104,6 +107,16 @@ paths:
                 slot_conflict:
                   value:
                     error: slot range conflicts with existing slots
+        '503':
+          description: Directory service unavailable while validating external references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                directory_service_unavailable:
+                  value:
+                    error: directory service unavailable
         '500':
           description: Unexpected failure while creating slots
           content:
@@ -166,7 +179,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Appointment'
         '400':
-          description: Invalid JSON body or validation failure
+          description: Invalid JSON body, validation failure, or missing external references
           content:
             application/json:
               schema:
@@ -178,6 +191,12 @@ paths:
                 invalid_appointment_request:
                   value:
                     error: invalid appointment request
+                professional_not_found:
+                  value:
+                    error: professional not found
+                patient_not_found:
+                  value:
+                    error: patient not found
         '404':
           description: Slot not found
           content:
@@ -198,6 +217,16 @@ paths:
                 slot_not_available:
                   value:
                     error: slot is not available
+        '503':
+          description: Directory service unavailable while validating external references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                directory_service_unavailable:
+                  value:
+                    error: directory service unavailable
         '500':
           description: Unexpected failure while creating the appointment
           content:
