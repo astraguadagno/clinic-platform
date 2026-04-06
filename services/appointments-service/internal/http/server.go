@@ -2,9 +2,12 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
+
+	"clinic-platform/services/appointments-service/internal/appointments"
 )
 
 type Config struct {
@@ -15,12 +18,14 @@ type Config struct {
 
 type Server struct {
 	config Config
+	repo   *appointments.Repository
 	mux    *http.ServeMux
 }
 
-func NewServer(config Config) *Server {
+func NewServer(config Config, repo *appointments.Repository) *Server {
 	server := &Server{
 		config: config,
+		repo:   repo,
 		mux:    http.NewServeMux(),
 	}
 
@@ -61,9 +66,7 @@ func (s *Server) info(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) slots(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{
-			"message": "list slots placeholder",
-		})
+		s.listSlots(w, r)
 	default:
 		writeMethodNotAllowed(w, http.MethodGet)
 	}
@@ -75,21 +78,35 @@ func (s *Server) bulkSlots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"message": "bulk slot creation not implemented yet",
-	})
+	var request appointments.BulkCreateSlotsParams
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	slots, err := s.repo.CreateSlotsBulk(r.Context(), request)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid slot bulk request")
+		return
+	}
+	if errors.Is(err, appointments.ErrConflict) {
+		writeError(w, http.StatusConflict, "slot range conflicts with existing slots")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create slots")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"items": slots})
 }
 
 func (s *Server) appointments(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{
-			"message": "list appointments placeholder",
-		})
+		s.listAppointments(w, r)
 	case http.MethodPost:
-		writeJSON(w, http.StatusNotImplemented, map[string]any{
-			"message": "create appointment not implemented yet",
-		})
+		s.createAppointment(w, r)
 	default:
 		writeMethodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
@@ -104,14 +121,98 @@ func (s *Server) appointmentByIDAction(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/appointments/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] != "cancel" {
-		writeJSON(w, http.StatusNotFound, map[string]any{"message": "route not found"})
+		writeError(w, http.StatusNotFound, "route not found")
 		return
 	}
 
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"message":        "cancel appointment not implemented yet",
-		"appointment_id": parts[0],
-	})
+	appointment, err := s.repo.CancelAppointment(r.Context(), parts[0])
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid appointment id")
+		return
+	}
+	if errors.Is(err, appointments.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "appointment not found")
+		return
+	}
+	if errors.Is(err, appointments.ErrConflict) {
+		writeError(w, http.StatusConflict, "appointment already cancelled")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to cancel appointment")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, appointment)
+}
+
+func (s *Server) listSlots(w http.ResponseWriter, r *http.Request) {
+	filters := appointments.SlotFilters{
+		ProfessionalID: r.URL.Query().Get("professional_id"),
+		Status:         r.URL.Query().Get("status"),
+		Date:           r.URL.Query().Get("date"),
+	}
+
+	slots, err := s.repo.ListSlots(r.Context(), filters)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid slot filters")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list slots")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": slots})
+}
+
+func (s *Server) createAppointment(w http.ResponseWriter, r *http.Request) {
+	var request appointments.CreateAppointmentParams
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	appointment, err := s.repo.CreateAppointment(r.Context(), request)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid appointment request")
+		return
+	}
+	if errors.Is(err, appointments.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "slot not found")
+		return
+	}
+	if errors.Is(err, appointments.ErrConflict) {
+		writeError(w, http.StatusConflict, "slot is not available")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create appointment")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, appointment)
+}
+
+func (s *Server) listAppointments(w http.ResponseWriter, r *http.Request) {
+	filters := appointments.AppointmentFilters{
+		ProfessionalID: r.URL.Query().Get("professional_id"),
+		PatientID:      r.URL.Query().Get("patient_id"),
+		Status:         r.URL.Query().Get("status"),
+		Date:           r.URL.Query().Get("date"),
+	}
+
+	items, err := s.repo.ListAppointments(r.Context(), filters)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid appointment filters")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list appointments")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
@@ -123,7 +224,11 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeMethodNotAllowed(w http.ResponseWriter, methods ...string) {
 	w.Header().Set("Allow", strings.Join(methods, ", "))
-	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
-		"message": "method not allowed",
+	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]any{
+		"error": message,
 	})
 }
