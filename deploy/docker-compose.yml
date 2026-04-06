@@ -30,13 +30,30 @@ services:
     volumes:
       - appointments-db-data:/var/lib/postgresql/data
       - ../services/appointments-service/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
-      - ../services/appointments-service/migrations/002_prevent_availability_slot_overlaps.sql:/docker-entrypoint-initdb.d/002_prevent_availability_slot_overlaps.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U appointments -d appointments"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 5s
+
+  appointments-db-migrator:
+    image: postgres:17-alpine
+    container_name: appointments-db-migrator
+    environment:
+      PGPASSWORD: appointments
+    command:
+      - sh
+      - -ec
+      - >-
+        psql -h appointments-db -p 5432 -U appointments -d appointments
+        -v ON_ERROR_STOP=1
+        -f /migrations/002_prevent_availability_slot_overlaps.sql
+    volumes:
+      - ../services/appointments-service/migrations/002_prevent_availability_slot_overlaps.sql:/migrations/002_prevent_availability_slot_overlaps.sql:ro
+    depends_on:
+      appointments-db:
+        condition: service_healthy
 
   directory-service:
     build:
@@ -72,8 +89,8 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      appointments-db:
-        condition: service_healthy
+      appointments-db-migrator:
+        condition: service_completed_successfully
       directory-service:
         condition: service_started
 

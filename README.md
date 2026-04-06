@@ -61,11 +61,27 @@ docker compose -f deploy/docker-compose.yml up --build
 Qué hace este arranque:
 
 - levanta una DB PostgreSQL por servicio
-- monta los SQL actuales en `/docker-entrypoint-initdb.d/`
-- inicializa el esquema en el primer arranque del volumen
-- espera a que cada DB esté saludable antes de levantar su servicio HTTP
+- monta `001_init.sql` en `/docker-entrypoint-initdb.d/`
+- inicializa el esquema base en el primer arranque del volumen
+- corre un migrador one-shot para `appointments-db` antes de levantar `appointments-service`
+- espera a que cada DB esté saludable y a que el migrador de appointments termine OK antes de levantar su servicio HTTP
 
 > Importante: los scripts de inicialización corren solamente cuando el volumen de la base está vacío.
+> La migración `002_prevent_availability_slot_overlaps.sql` también se ejecuta sobre bases existentes mediante el servicio `appointments-db-migrator`.
+
+### Migración de no solapamiento en appointments
+
+El constraint `availability_slots_no_overlap` ahora se aplica de dos formas:
+
+- en bootstrap limpio, porque `001_init.sql` crea la tabla base y luego corre el migrador one-shot
+- en bases ya existentes, porque `appointments-db-migrator` ejecuta `002_prevent_availability_slot_overlaps.sql` en cada arranque
+
+La migración es idempotente: si el constraint ya existe, no intenta recrearlo.
+
+Limitación importante:
+
+- si la base ya tiene filas solapadas en `availability_slots`, PostgreSQL va a rechazar el `ADD CONSTRAINT`
+- en ese caso el migrador falla y `appointments-service` no arranca hasta que esos datos conflictivos se corrijan manualmente
 
 ## Reset del entorno local
 
