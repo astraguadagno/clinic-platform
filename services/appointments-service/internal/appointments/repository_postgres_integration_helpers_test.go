@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func newPostgresIntegrationRepository(t *testing.T) (*Repository, *sql.DB) {
@@ -18,6 +20,10 @@ func newPostgresIntegrationRepository(t *testing.T) (*Repository, *sql.DB) {
 	dsn := postgresIntegrationTestDSN()
 	if dsn == "" {
 		t.Skip(describeIntegrationDSNRequirement())
+	}
+
+	if reason := postgresIntegrationResetSkipReason(dsn); reason != "" {
+		t.Skip(reason)
 	}
 
 	db, err := OpenDB(dsn)
@@ -38,6 +44,28 @@ func newPostgresIntegrationRepository(t *testing.T) (*Repository, *sql.DB) {
 func postgresIntegrationTestDSN() string {
 	if dsn := strings.TrimSpace(os.Getenv("APPOINTMENTS_TEST_DATABASE_DSN")); dsn != "" {
 		return dsn
+	}
+
+	return ""
+}
+
+func postgresIntegrationResetSkipReason(dsn string) string {
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return fmt.Sprintf("skipping destructive PostgreSQL integration reset: invalid %s: %v", "APPOINTMENTS_TEST_DATABASE_DSN", err)
+	}
+
+	databaseName := strings.TrimSpace(config.Database)
+	if databaseName == "" {
+		return fmt.Sprintf("skipping destructive PostgreSQL integration reset: %s must include a database name ending in _test", "APPOINTMENTS_TEST_DATABASE_DSN")
+	}
+
+	if !strings.HasSuffix(databaseName, "_test") {
+		return fmt.Sprintf("skipping destructive PostgreSQL integration reset: database %q from %s must end with _test", databaseName, "APPOINTMENTS_TEST_DATABASE_DSN")
+	}
+
+	if strings.TrimSpace(os.Getenv("APPOINTMENTS_TEST_DATABASE_RESET_ALLOWED")) != "true" {
+		return "skipping destructive PostgreSQL integration reset: set APPOINTMENTS_TEST_DATABASE_RESET_ALLOWED=true to allow schema reset"
 	}
 
 	return ""
@@ -162,5 +190,5 @@ func countAppointments(t *testing.T, db *sql.DB) int {
 }
 
 func describeIntegrationDSNRequirement() string {
-	return fmt.Sprintf("run with %s set to a dedicated PostgreSQL database", "APPOINTMENTS_TEST_DATABASE_DSN")
+	return fmt.Sprintf("run with %s set to a dedicated PostgreSQL database ending in _test and APPOINTMENTS_TEST_DATABASE_RESET_ALLOWED=true", "APPOINTMENTS_TEST_DATABASE_DSN")
 }
