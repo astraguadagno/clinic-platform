@@ -27,10 +27,10 @@ Este primer scaffold deja:
 - rutas placeholder para la API de negocio
 - OpenAPI base por servicio
 - Dockerfiles por servicio
-- `docker-compose` inicial con una base PostgreSQL por servicio
+- `docker-compose` local con una base PostgreSQL por servicio e inicialización automática de esquema SQL
 - CI básica
 
-Todavía **no** implementa persistencia ni lógica completa de negocio. Eso viene en los próximos pasos.
+La V1 YA corre con persistencia real en PostgreSQL para ambos servicios. El alcance sigue siendo intencionalmente chico: APIs mínimas, esquemas iniciales y flujo local simple para operar y validar el entorno.
 
 ## Estructura
 
@@ -47,6 +47,36 @@ clinic-platform/
 
 - `directory-service` → `http://localhost:8081`
 - `appointments-service` → `http://localhost:8082`
+- `directory-db` → `localhost:5433`
+- `appointments-db` → `localhost:5434`
+
+## Arranque local correcto
+
+Prerequisito: Docker Desktop o engine compatible con `docker compose`.
+
+```bash
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+Qué hace este arranque:
+
+- levanta una DB PostgreSQL por servicio
+- monta los SQL actuales en `/docker-entrypoint-initdb.d/`
+- inicializa el esquema en el primer arranque del volumen
+- espera a que cada DB esté saludable antes de levantar su servicio HTTP
+
+> Importante: los scripts de inicialización corren solamente cuando el volumen de la base está vacío.
+
+## Reset del entorno local
+
+Si necesitás recrear las bases desde cero y volver a ejecutar los SQL iniciales:
+
+```bash
+docker compose -f deploy/docker-compose.yml down -v
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+Usá `down -v` solo cuando quieras borrar los datos locales de PostgreSQL.
 
 ## Endpoints base
 
@@ -71,11 +101,37 @@ clinic-platform/
 - `GET /appointments`
 - `PATCH /appointments/{id}/cancel`
 
+## Smoke checks mínimos
+
+Con el stack levantado:
+
+```bash
+curl http://localhost:8081/health
+curl http://localhost:8082/health
+curl http://localhost:8081/info
+curl http://localhost:8082/info
+```
+
+Chequeos rápidos de persistencia:
+
+```bash
+curl -X POST http://localhost:8081/patients \
+  -H 'Content-Type: application/json' \
+  -d '{"first_name":"Ada","last_name":"Lovelace","document":"123","birth_date":"1990-10-10","phone":"555-0101"}'
+
+curl http://localhost:8081/patients
+```
+
+Si querés inspeccionar las DB directamente:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec directory-db psql -U directory -d directory
+docker compose -f deploy/docker-compose.yml exec appointments-db psql -U appointments -d appointments
+```
+
 ## Próximos pasos recomendados
 
-1. Modelar entidades y estados de V1
-2. Implementar persistencia PostgreSQL en `directory-service`
-3. Implementar persistencia PostgreSQL en `appointments-service`
-4. Agregar validaciones de negocio
-5. Completar OpenAPI con request/response reales
-6. Agregar tests por caso de uso
+1. Agregar readiness/healthchecks HTTP de aplicación si se quiere endurecer la dependencia entre servicios
+2. Agregar datos seed opcionales para demo local sin mezclar esquema con fixtures
+3. Completar validaciones de negocio y respuestas OpenAPI reales
+4. Agregar tests de integración contra PostgreSQL por servicio
