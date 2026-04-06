@@ -14,6 +14,10 @@ paths:
       responses:
         '200':
           description: Healthy service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
 
   /info:
     get:
@@ -21,6 +25,10 @@ paths:
       responses:
         '200':
           description: Service info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfoResponse'
 
   /patients:
     get:
@@ -28,6 +36,12 @@ paths:
       responses:
         '200':
           description: Patients listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       summary: Create patient
       requestBody:
@@ -39,19 +53,57 @@ paths:
       responses:
         '201':
           description: Patient created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+              examples:
+                created_patient:
+                  value:
+                    id: patient-1
+                    first_name: Ada
+                    last_name: Lovelace
+                    document: '123'
+                    birth_date: '1990-10-10'
+                    phone: '555'
+                    email: ada@example.com
+                    active: true
+                    created_at: '2026-04-06T12:00:00Z'
+                    updated_at: '2026-04-06T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/CreatePatientBadRequest'
+        '500':
+          $ref: '#/components/responses/CreatePatientInternalServerError'
 
   /patients/{id}:
     get:
       summary: Get patient by ID
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/ResourceID'
       responses:
         '200':
           description: Patient found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+              examples:
+                patient:
+                  value:
+                    id: patient-1
+                    first_name: Ada
+                    last_name: Lovelace
+                    document: '123'
+                    birth_date: '1990-10-10'
+                    phone: '555'
+                    email: ada@example.com
+                    active: true
+                    created_at: '2026-04-06T12:00:00Z'
+                    updated_at: '2026-04-06T12:00:00Z'
+        '404':
+          $ref: '#/components/responses/PatientNotFound'
+        '500':
+          $ref: '#/components/responses/GetPatientInternalServerError'
 
   /professionals:
     get:
@@ -59,6 +111,12 @@ paths:
       responses:
         '200':
           description: Professionals listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       summary: Create professional
       requestBody:
@@ -70,22 +128,192 @@ paths:
       responses:
         '201':
           description: Professional created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professional'
+              examples:
+                created_professional:
+                  value:
+                    id: pro-1
+                    first_name: Ana
+                    last_name: Lopez
+                    specialty: cardiology
+                    active: true
+                    created_at: '2026-04-06T12:00:00Z'
+                    updated_at: '2026-04-06T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/CreateProfessionalBadRequest'
+        '500':
+          $ref: '#/components/responses/CreateProfessionalInternalServerError'
 
   /professionals/{id}:
     get:
       summary: Get professional by ID
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/ResourceID'
       responses:
         '200':
           description: Professional found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professional'
+              examples:
+                professional:
+                  value:
+                    id: pro-1
+                    first_name: Ana
+                    last_name: Lopez
+                    specialty: cardiology
+                    active: true
+                    created_at: '2026-04-06T12:00:00Z'
+                    updated_at: '2026-04-06T12:00:00Z'
+        '404':
+          $ref: '#/components/responses/ProfessionalNotFound'
+        '500':
+          $ref: '#/components/responses/GetProfessionalInternalServerError'
 
 components:
+  parameters:
+    ResourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    CreatePatientBadRequest:
+      description: Invalid JSON body or patient validation failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_json_body:
+              value:
+                error: invalid json body
+            failed_to_create_patient:
+              value:
+                error: failed to create patient
+    CreatePatientInternalServerError:
+      description: Unexpected failure while creating the patient.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_create_patient:
+              value:
+                error: failed to create patient
+    PatientNotFound:
+      description: Patient not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            patient_not_found:
+              value:
+                error: patient not found
+    GetPatientInternalServerError:
+      description: Unexpected failure while loading the patient.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_load_patient:
+              value:
+                error: failed to load patient
+    CreateProfessionalBadRequest:
+      description: Invalid JSON body or professional validation failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_json_body:
+              value:
+                error: invalid json body
+            failed_to_create_professional:
+              value:
+                error: failed to create professional
+    CreateProfessionalInternalServerError:
+      description: Unexpected failure while creating the professional.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_create_professional:
+              value:
+                error: failed to create professional
+    ProfessionalNotFound:
+      description: Professional not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            professional_not_found:
+              value:
+                error: professional not found
+    GetProfessionalInternalServerError:
+      description: Unexpected failure while loading the professional.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_load_professional:
+              value:
+                error: failed to load professional
   schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+      example:
+        error: invalid json body
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+        - time
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: directory-service
+        time:
+          type: string
+          format: date-time
+
+    InfoResponse:
+      type: object
+      required:
+        - service
+        - version
+        - environment
+      properties:
+        service:
+          type: string
+          example: directory-service
+        version:
+          type: string
+          example: 0.1.0
+        environment:
+          type: string
+          example: development
+
     CreatePatientRequest:
       type: object
       required:
@@ -95,6 +323,41 @@ components:
         - birth_date
         - phone
       properties:
+        first_name:
+          type: string
+          minLength: 1
+        last_name:
+          type: string
+          minLength: 1
+        document:
+          type: string
+          minLength: 1
+        birth_date:
+          type: string
+          format: date
+        phone:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+
+    Patient:
+      type: object
+      required:
+        - id
+        - first_name
+        - last_name
+        - document
+        - birth_date
+        - phone
+        - active
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
         first_name:
           type: string
         last_name:
@@ -109,6 +372,25 @@ components:
         email:
           type: string
           format: email
+          nullable: true
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PatientListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Patient'
 
     CreateProfessionalRequest:
       type: object
@@ -123,3 +405,45 @@ components:
           type: string
         specialty:
           type: string
+
+    Professional:
+      type: object
+      required:
+        - id
+        - first_name
+        - last_name
+        - specialty
+        - active
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+          minLength: 1
+        last_name:
+          type: string
+          minLength: 1
+        specialty:
+          type: string
+          minLength: 1
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProfessionalListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Professional'

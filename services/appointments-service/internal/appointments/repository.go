@@ -19,6 +19,8 @@ var (
 	ErrValidation = errors.New("appointments validation failed")
 )
 
+const availabilitySlotsNoOverlapConstraint = "availability_slots_no_overlap"
+
 type Repository struct {
 	db *sql.DB
 }
@@ -71,6 +73,15 @@ type Appointment struct {
 	CancelledAt    *time.Time `json:"cancelled_at,omitempty"`
 }
 
+func ValidateBulkCreateSlotsParams(params BulkCreateSlotsParams) error {
+	_, _, _, _, err := parseBulkSlotInputs(params)
+	return err
+}
+
+func ValidateCreateAppointmentParams(params CreateAppointmentParams) error {
+	return validateAppointmentParams(params)
+}
+
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
@@ -113,7 +124,7 @@ func (r *Repository) CreateSlotsBulk(ctx context.Context, params BulkCreateSlots
 		row := tx.QueryRowContext(ctx, query, professionalID, current, next)
 		slot, scanErr := scanSlot(row)
 		if scanErr != nil {
-			if isUniqueViolation(scanErr) {
+			if isConflictViolation(scanErr) {
 				return nil, ErrConflict
 			}
 			return nil, scanErr
@@ -223,7 +234,7 @@ func (r *Repository) CreateAppointment(ctx context.Context, params CreateAppoint
 
 	appointment, err := scanAppointment(appointmentRow)
 	if err != nil {
-		if isUniqueViolation(err) {
+		if isConflictViolation(err) {
 			return Appointment{}, ErrConflict
 		}
 		return Appointment{}, err
@@ -413,9 +424,13 @@ func validateAppointmentParams(params CreateAppointmentParams) error {
 	return nil
 }
 
-func isUniqueViolation(err error) bool {
+func isConflictViolation(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+
+	return pgErr.Code == "23505" || (pgErr.Code == "23P01" && pgErr.ConstraintName == availabilitySlotsNoOverlapConstraint)
 }
 
 type slotScanner interface {
