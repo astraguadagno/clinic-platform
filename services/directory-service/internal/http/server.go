@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -18,11 +19,20 @@ type Config struct {
 
 type Server struct {
 	config Config
-	repo   *directory.Repository
+	repo   directoryRepository
 	mux    *http.ServeMux
 }
 
-func NewServer(config Config, repo *directory.Repository) *Server {
+type directoryRepository interface {
+	CreatePatient(ctx context.Context, params directory.CreatePatientParams) (directory.Patient, error)
+	ListPatients(ctx context.Context) ([]directory.Patient, error)
+	GetPatientByID(ctx context.Context, id string) (directory.Patient, error)
+	CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error)
+	ListProfessionals(ctx context.Context) ([]directory.Professional, error)
+	GetProfessionalByID(ctx context.Context, id string) (directory.Professional, error)
+}
+
+func NewServer(config Config, repo directoryRepository) *Server {
 	server := &Server{
 		config: config,
 		repo:   repo,

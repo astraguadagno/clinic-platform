@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -18,11 +19,19 @@ type Config struct {
 
 type Server struct {
 	config Config
-	repo   *appointments.Repository
+	repo   appointmentsRepository
 	mux    *http.ServeMux
 }
 
-func NewServer(config Config, repo *appointments.Repository) *Server {
+type appointmentsRepository interface {
+	CreateSlotsBulk(ctx context.Context, params appointments.BulkCreateSlotsParams) ([]appointments.AvailabilitySlot, error)
+	ListSlots(ctx context.Context, filters appointments.SlotFilters) ([]appointments.AvailabilitySlot, error)
+	CreateAppointment(ctx context.Context, params appointments.CreateAppointmentParams) (appointments.Appointment, error)
+	ListAppointments(ctx context.Context, filters appointments.AppointmentFilters) ([]appointments.Appointment, error)
+	CancelAppointment(ctx context.Context, appointmentID string) (appointments.Appointment, error)
+}
+
+func NewServer(config Config, repo appointmentsRepository) *Server {
 	server := &Server{
 		config: config,
 		repo:   repo,
