@@ -1,0 +1,62 @@
+services:
+  directory-db:
+    image: postgres:17-alpine
+    container_name: directory-db
+    environment:
+      POSTGRES_DB: directory
+      POSTGRES_USER: directory
+      POSTGRES_PASSWORD: directory
+    ports:
+      - "5433:5432"
+    volumes:
+      - directory-db-data:/var/lib/postgresql/data
+
+  appointments-db:
+    image: postgres:17-alpine
+    container_name: appointments-db
+    environment:
+      POSTGRES_DB: appointments
+      POSTGRES_USER: appointments
+      POSTGRES_PASSWORD: appointments
+    ports:
+      - "5434:5432"
+    volumes:
+      - appointments-db-data:/var/lib/postgresql/data
+
+  directory-service:
+    build:
+      context: ../services/directory-service
+    container_name: directory-service
+    environment:
+      PORT: 8081
+      APP_ENV: docker
+      DB_HOST: directory-db
+      DB_PORT: 5432
+      DB_NAME: directory
+      DB_USER: directory
+      DB_PASSWORD: directory
+    ports:
+      - "8081:8081"
+    depends_on:
+      - directory-db
+
+  appointments-service:
+    build:
+      context: ../services/appointments-service
+    container_name: appointments-service
+    environment:
+      PORT: 8082
+      APP_ENV: docker
+      DB_HOST: appointments-db
+      DB_PORT: 5432
+      DB_NAME: appointments
+      DB_USER: appointments
+      DB_PASSWORD: appointments
+    ports:
+      - "8082:8082"
+    depends_on:
+      - appointments-db
+
+volumes:
+  directory-db-data:
+  appointments-db-data:

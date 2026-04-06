@@ -1,0 +1,114 @@
+openapi: 3.0.3
+info:
+  title: Appointments Service API
+  version: 0.1.0
+  description: API for managing professional availability and appointments.
+
+servers:
+  - url: http://localhost:8082
+
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Healthy service
+
+  /info:
+    get:
+      summary: Service metadata
+      responses:
+        '200':
+          description: Service info
+
+  /slots:
+    get:
+      summary: List slots
+      responses:
+        '200':
+          description: Slots listed
+
+  /slots/bulk:
+    post:
+      summary: Create slots in bulk for a professional
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkCreateSlotsRequest'
+      responses:
+        '201':
+          description: Slots created
+
+  /appointments:
+    get:
+      summary: List appointments
+      responses:
+        '200':
+          description: Appointments listed
+    post:
+      summary: Create appointment from an available slot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAppointmentRequest'
+      responses:
+        '201':
+          description: Appointment created
+
+  /appointments/{id}/cancel:
+    patch:
+      summary: Cancel appointment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Appointment cancelled
+
+components:
+  schemas:
+    BulkCreateSlotsRequest:
+      type: object
+      required:
+        - professional_id
+        - date
+        - start_time
+        - end_time
+        - slot_duration_minutes
+      properties:
+        professional_id:
+          type: string
+        date:
+          type: string
+          format: date
+        start_time:
+          type: string
+          example: "09:00"
+        end_time:
+          type: string
+          example: "12:00"
+        slot_duration_minutes:
+          type: integer
+          minimum: 5
+
+    CreateAppointmentRequest:
+      type: object
+      required:
+        - slot_id
+        - patient_id
+        - professional_id
+      properties:
+        slot_id:
+          type: string
+        patient_id:
+          type: string
+        professional_id:
+          type: string

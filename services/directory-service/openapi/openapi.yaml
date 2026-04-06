@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: Directory Service API
+  version: 0.1.0
+  description: API for managing patients and professionals.
+
+servers:
+  - url: http://localhost:8081
+
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Healthy service
+
+  /info:
+    get:
+      summary: Service metadata
+      responses:
+        '200':
+          description: Service info
+
+  /patients:
+    get:
+      summary: List patients
+      responses:
+        '200':
+          description: Patients listed
+    post:
+      summary: Create patient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePatientRequest'
+      responses:
+        '201':
+          description: Patient created
+
+  /patients/{id}:
+    get:
+      summary: Get patient by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Patient found
+
+  /professionals:
+    get:
+      summary: List professionals
+      responses:
+        '200':
+          description: Professionals listed
+    post:
+      summary: Create professional
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProfessionalRequest'
+      responses:
+        '201':
+          description: Professional created
+
+  /professionals/{id}:
+    get:
+      summary: Get professional by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Professional found
+
+components:
+  schemas:
+    CreatePatientRequest:
+      type: object
+      required:
+        - first_name
+        - last_name
+        - document
+        - birth_date
+        - phone
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        document:
+          type: string
+        birth_date:
+          type: string
+          format: date
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+
+    CreateProfessionalRequest:
+      type: object
+      required:
+        - first_name
+        - last_name
+        - specialty
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        specialty:
+          type: string
