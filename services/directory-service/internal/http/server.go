@@ -153,8 +153,12 @@ func (s *Server) createPatient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patient, err := s.repo.CreatePatient(r.Context(), request)
-	if err != nil {
+	if errors.Is(err, directory.ErrValidation) {
 		writeError(w, http.StatusBadRequest, "failed to create patient")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create patient")
 		return
 	}
 
@@ -179,8 +183,12 @@ func (s *Server) createProfessional(w http.ResponseWriter, r *http.Request) {
 	}
 
 	professional, err := s.repo.CreateProfessional(r.Context(), request)
-	if err != nil {
+	if errors.Is(err, directory.ErrValidation) {
 		writeError(w, http.StatusBadRequest, "failed to create professional")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create professional")
 		return
 	}
 

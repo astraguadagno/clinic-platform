@@ -12,6 +12,7 @@ import (
 )
 
 var ErrNotFound = errors.New("directory resource not found")
+var ErrValidation = errors.New("directory validation failed")
 
 type Repository struct {
 	db *sql.DB
@@ -74,7 +75,7 @@ func OpenDB(dsn string) (*sql.DB, error) {
 }
 
 func (r *Repository) CreatePatient(ctx context.Context, params CreatePatientParams) (Patient, error) {
-	birthDate, err := time.Parse("2006-01-02", strings.TrimSpace(params.BirthDate))
+	normalized, birthDate, err := validateCreatePatientParams(params)
 	if err != nil {
 		return Patient{}, err
 	}
@@ -88,12 +89,12 @@ func (r *Repository) CreatePatient(ctx context.Context, params CreatePatientPara
 	row := r.db.QueryRowContext(
 		ctx,
 		query,
-		strings.TrimSpace(params.FirstName),
-		strings.TrimSpace(params.LastName),
-		strings.TrimSpace(params.Document),
+		normalized.FirstName,
+		normalized.LastName,
+		normalized.Document,
 		birthDate,
-		strings.TrimSpace(params.Phone),
-		strings.TrimSpace(params.Email),
+		normalized.Phone,
+		normalized.Email,
 	)
 
 	return scanPatient(row)
@@ -146,6 +147,11 @@ func (r *Repository) GetPatientByID(ctx context.Context, id string) (Patient, er
 }
 
 func (r *Repository) CreateProfessional(ctx context.Context, params CreateProfessionalParams) (Professional, error) {
+	normalized, err := validateCreateProfessionalParams(params)
+	if err != nil {
+		return Professional{}, err
+	}
+
 	query := `
 		INSERT INTO professionals (first_name, last_name, specialty)
 		VALUES ($1, $2, $3)
@@ -155,12 +161,48 @@ func (r *Repository) CreateProfessional(ctx context.Context, params CreateProfes
 	row := r.db.QueryRowContext(
 		ctx,
 		query,
-		strings.TrimSpace(params.FirstName),
-		strings.TrimSpace(params.LastName),
-		strings.TrimSpace(params.Specialty),
+		normalized.FirstName,
+		normalized.LastName,
+		normalized.Specialty,
 	)
 
 	return scanProfessional(row)
+}
+
+func validateCreatePatientParams(params CreatePatientParams) (CreatePatientParams, time.Time, error) {
+	normalized := CreatePatientParams{
+		FirstName: strings.TrimSpace(params.FirstName),
+		LastName:  strings.TrimSpace(params.LastName),
+		Document:  strings.TrimSpace(params.Document),
+		BirthDate: strings.TrimSpace(params.BirthDate),
+		Phone:     strings.TrimSpace(params.Phone),
+		Email:     strings.TrimSpace(params.Email),
+	}
+
+	if normalized.FirstName == "" || normalized.LastName == "" || normalized.Document == "" || normalized.BirthDate == "" || normalized.Phone == "" {
+		return CreatePatientParams{}, time.Time{}, ErrValidation
+	}
+
+	birthDate, err := time.Parse("2006-01-02", normalized.BirthDate)
+	if err != nil {
+		return CreatePatientParams{}, time.Time{}, ErrValidation
+	}
+
+	return normalized, birthDate, nil
+}
+
+func validateCreateProfessionalParams(params CreateProfessionalParams) (CreateProfessionalParams, error) {
+	normalized := CreateProfessionalParams{
+		FirstName: strings.TrimSpace(params.FirstName),
+		LastName:  strings.TrimSpace(params.LastName),
+		Specialty: strings.TrimSpace(params.Specialty),
+	}
+
+	if normalized.FirstName == "" || normalized.LastName == "" || normalized.Specialty == "" {
+		return CreateProfessionalParams{}, ErrValidation
+	}
+
+	return normalized, nil
 }
 
 func (r *Repository) ListProfessionals(ctx context.Context) ([]Professional, error) {

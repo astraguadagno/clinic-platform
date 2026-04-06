@@ -101,6 +101,117 @@ func TestCreateProfessionalReturnsBadRequestOnInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestCreatePatientInvalidBirthDateReturnsBadRequest(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		createPatientFn: func(context.Context, directory.CreatePatientParams) (directory.Patient, error) {
+			return directory.Patient{}, directory.ErrValidation
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients", bytes.NewBufferString(`{"first_name":"Ada","last_name":"Lovelace","document":"123","birth_date":"10-10-1990","phone":"555"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreatePatientMissingRequiredFieldReturnsBadRequest(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		createPatientFn: func(context.Context, directory.CreatePatientParams) (directory.Patient, error) {
+			return directory.Patient{}, directory.ErrValidation
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients", bytes.NewBufferString(`{"first_name":"Ada","last_name":"","document":"123","birth_date":"1990-10-10","phone":"555"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreatePatientUnexpectedRepoErrorReturnsInternalServerError(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		createPatientFn: func(context.Context, directory.CreatePatientParams) (directory.Patient, error) {
+			return directory.Patient{}, errors.New("db down")
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients", bytes.NewBufferString(`{"first_name":"Ada","last_name":"Lovelace","document":"123","birth_date":"1990-10-10","phone":"555"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestCreateProfessionalValidReturnsCreated(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		createProfessionalFn: func(_ context.Context, params directory.CreateProfessionalParams) (directory.Professional, error) {
+			if params.Specialty != "cardiology" {
+				t.Fatalf("specialty = %q, want cardiology", params.Specialty)
+			}
+			return directory.Professional{ID: "pro-1", FirstName: "Ana", LastName: "Lopez", Specialty: "cardiology", Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":"Ana","last_name":"Lopez","specialty":"cardiology"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+}
+
+func TestCreateProfessionalMissingSpecialtyReturnsBadRequest(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		createProfessionalFn: func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error) {
+			return directory.Professional{}, directory.ErrValidation
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":"Ana","last_name":"Lopez","specialty":""}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreateProfessionalUnexpectedRepoErrorReturnsInternalServerError(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		createProfessionalFn: func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error) {
+			return directory.Professional{}, errors.New("db down")
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":"Ana","last_name":"Lopez","specialty":"cardiology"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+}
+
 func TestHealthReturnsStatusOK(t *testing.T) {
 	server := NewServer(testConfig(), &stubDirectoryRepository{})
 	recorder := httptest.NewRecorder()
