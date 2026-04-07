@@ -3,6 +3,7 @@ type QueryValue = string | number | boolean | null | undefined;
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH';
   body?: unknown;
+  headers?: HeadersInit;
   query?: Record<string, QueryValue>;
 };
 
@@ -31,7 +32,10 @@ export async function request<T>(baseUrl: string, path: string, options: Request
 
   const response = await fetch(`${baseUrl}${url.pathname}${url.search}`, {
     method: options.method ?? 'GET',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...options.headers,
+    },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 

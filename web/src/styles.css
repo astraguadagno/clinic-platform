@@ -64,6 +64,11 @@ button {
   padding: 32px 20px 56px;
 }
 
+.page-centered {
+  display: grid;
+  place-items: center;
+}
+
 .shell {
   max-width: 1160px;
   margin: 0 auto;
@@ -71,6 +76,10 @@ button {
 
 .app-shell {
   gap: 20px;
+}
+
+.auth-shell {
+  max-width: 560px;
 }
 
 .stack,
@@ -230,6 +239,26 @@ button {
   gap: 16px;
 }
 
+.shell-toolbar,
+.auth-toolbar,
+.auth-footnotes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.auth-card {
+  gap: 20px;
+}
+
+.auth-page code {
+  font-size: 0.9em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+}
+
 .surface-switcher-header,
 .section-header {
   display: flex;
@@ -257,6 +286,18 @@ button {
 .surface-tab strong {
   font-size: 1rem;
   color: var(--text);
+}
+
+.inline-note-error {
+  border: 1px solid rgba(153, 27, 27, 0.12);
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.button-secondary {
+  background: var(--bg-surface-muted);
+  color: var(--text);
+  border: 1px solid var(--border);
 }
 
 .surface-tab:hover {

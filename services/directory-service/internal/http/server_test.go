@@ -43,6 +43,156 @@ func TestCreatePatientReturnsCreatedPatient(t *testing.T) {
 	}
 }
 
+func TestLoginReturnsAccessToken(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		authenticateUserFn: func(_ context.Context, email, password string) (directory.User, error) {
+			if email != "admin@clinic.local" {
+				t.Fatalf("email = %q, want admin@clinic.local", email)
+			}
+			if password != "admin123" {
+				t.Fatalf("password = %q, want admin123", password)
+			}
+			return directory.User{ID: "user-1", Email: email, Role: "admin", Active: true}, nil
+		},
+		createSessionFn: func(_ context.Context, userID, tokenHash string, expiresAt time.Time) error {
+			if userID != "user-1" {
+				t.Fatalf("userID = %q, want user-1", userID)
+			}
+			if tokenHash == "" {
+				t.Fatal("tokenHash should not be empty")
+			}
+			if expiresAt.IsZero() {
+				t.Fatal("expiresAt should not be zero")
+			}
+			return nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(`{"email":"admin@clinic.local","password":"admin123"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response loginResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.AccessToken == "" {
+		t.Fatal("access token should not be empty")
+	}
+	if response.TokenType != "Bearer" {
+		t.Fatalf("token_type = %q, want Bearer", response.TokenType)
+	}
+	if response.User.Email != "admin@clinic.local" {
+		t.Fatalf("user.email = %q, want admin@clinic.local", response.User.Email)
+	}
+	if response.ExpiresAt.IsZero() {
+		t.Fatal("expires_at should not be zero")
+	}
+}
+
+func TestLoginReturnsUnauthorizedOnInvalidCredentials(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		authenticateUserFn: func(context.Context, string, string) (directory.User, error) {
+			return directory.User{}, directory.ErrUnauthorized
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(`{"email":"admin@clinic.local","password":"bad"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestLoginReturnsBadRequestOnMissingCredentials(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		authenticateUserFn: func(context.Context, string, string) (directory.User, error) {
+			return directory.User{}, directory.ErrValidation
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(`{"email":"","password":""}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestMeReturnsCurrentUser(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(_ context.Context, tokenHash string, _ time.Time) (directory.User, error) {
+			if tokenHash == "" {
+				t.Fatal("tokenHash should not be empty")
+			}
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response directory.User
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Email != "admin@clinic.local" {
+		t.Fatalf("email = %q, want admin@clinic.local", response.Email)
+	}
+}
+
+func TestMeReturnsUnauthorizedWithoutBearerToken(t *testing.T) {
+	server := NewServer(testConfig(), &stubDirectoryRepository{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestMeReturnsUnauthorizedOnUnknownSession(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{}, directory.ErrUnauthorized
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	request.Header.Set("Authorization", "Bearer missing-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestPatientByIDReturnsNotFound(t *testing.T) {
 	repo := &stubDirectoryRepository{
 		getPatientByIDFn: func(context.Context, string) (directory.Patient, error) {
@@ -225,12 +375,15 @@ func TestHealthReturnsStatusOK(t *testing.T) {
 }
 
 type stubDirectoryRepository struct {
-	createPatientFn       func(context.Context, directory.CreatePatientParams) (directory.Patient, error)
-	listPatientsFn        func(context.Context) ([]directory.Patient, error)
-	getPatientByIDFn      func(context.Context, string) (directory.Patient, error)
-	createProfessionalFn  func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error)
-	listProfessionalsFn   func(context.Context) ([]directory.Professional, error)
-	getProfessionalByIDFn func(context.Context, string) (directory.Professional, error)
+	createPatientFn         func(context.Context, directory.CreatePatientParams) (directory.Patient, error)
+	listPatientsFn          func(context.Context) ([]directory.Patient, error)
+	getPatientByIDFn        func(context.Context, string) (directory.Patient, error)
+	createProfessionalFn    func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error)
+	listProfessionalsFn     func(context.Context) ([]directory.Professional, error)
+	getProfessionalByIDFn   func(context.Context, string) (directory.Professional, error)
+	authenticateUserFn      func(context.Context, string, string) (directory.User, error)
+	createSessionFn         func(context.Context, string, string, time.Time) error
+	getUserBySessionTokenFn func(context.Context, string, time.Time) (directory.User, error)
 }
 
 func (s *stubDirectoryRepository) CreatePatient(ctx context.Context, params directory.CreatePatientParams) (directory.Patient, error) {
@@ -275,8 +428,29 @@ func (s *stubDirectoryRepository) GetProfessionalByID(ctx context.Context, id st
 	return s.getProfessionalByIDFn(ctx, id)
 }
 
+func (s *stubDirectoryRepository) AuthenticateUser(ctx context.Context, email, password string) (directory.User, error) {
+	if s.authenticateUserFn == nil {
+		return directory.User{}, errors.New("unexpected AuthenticateUser call")
+	}
+	return s.authenticateUserFn(ctx, email, password)
+}
+
+func (s *stubDirectoryRepository) CreateSession(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+	if s.createSessionFn == nil {
+		return errors.New("unexpected CreateSession call")
+	}
+	return s.createSessionFn(ctx, userID, tokenHash, expiresAt)
+}
+
+func (s *stubDirectoryRepository) GetUserBySessionToken(ctx context.Context, tokenHash string, now time.Time) (directory.User, error) {
+	if s.getUserBySessionTokenFn == nil {
+		return directory.User{}, errors.New("unexpected GetUserBySessionToken call")
+	}
+	return s.getUserBySessionTokenFn(ctx, tokenHash, now)
+}
+
 func testConfig() Config {
-	return Config{ServiceName: "directory-service", Version: "test", Environment: "test"}
+	return Config{ServiceName: "directory-service", Version: "test", Environment: "test", AuthTokenTTL: time.Hour}
 }
 
 func TestInfoReturnsMetadata(t *testing.T) {
