@@ -71,8 +71,28 @@ services:
       DB_NAME: directory
       DB_USER: directory
       DB_PASSWORD: directory
+      BOOTSTRAP_ADMIN_EMAIL: admin@clinic.local
+      BOOTSTRAP_ADMIN_PASSWORD: admin123
     ports:
       - "8081:8081"
+    depends_on:
+      directory-db-migrator:
+        condition: service_completed_successfully
+
+  directory-db-migrator:
+    image: postgres:17-alpine
+    container_name: directory-db-migrator
+    environment:
+      PGPASSWORD: directory
+    command:
+      - sh
+      - -ec
+      - >-
+        psql -h directory-db -p 5432 -U directory -d directory
+        -v ON_ERROR_STOP=1
+        -f /migrations/002_access_auth.sql
+    volumes:
+      - ../services/directory-service/migrations/002_access_auth.sql:/migrations/002_access_auth.sql:ro
     depends_on:
       directory-db:
         condition: service_healthy

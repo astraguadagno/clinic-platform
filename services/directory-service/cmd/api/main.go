@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"clinic-platform/services/directory-service/internal/directory"
 	internalhttp "clinic-platform/services/directory-service/internal/http"
@@ -20,11 +22,22 @@ func main() {
 	}
 	defer repository.Close()
 
+	repo := directory.NewRepository(repository)
+	if appEnv == "local" || appEnv == "docker" {
+		if err := repo.BootstrapAccess(context.Background(), directory.BootstrapAccessParams{
+			AdminEmail:    envOrDefault("BOOTSTRAP_ADMIN_EMAIL", "admin@clinic.local"),
+			AdminPassword: envOrDefault("BOOTSTRAP_ADMIN_PASSWORD", "admin123"),
+		}); err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	handler := internalhttp.NewServer(internalhttp.Config{
-		ServiceName: "directory-service",
-		Version:     "v0.1.0",
-		Environment: appEnv,
-	}, directory.NewRepository(repository))
+		ServiceName:  "directory-service",
+		Version:      "v0.1.0",
+		Environment:  appEnv,
+		AuthTokenTTL: 24 * time.Hour,
+	}, repo)
 
 	log.Printf("starting directory-service on :%s", port)
 

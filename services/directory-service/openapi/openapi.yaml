@@ -30,6 +30,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/InfoResponse'
 
+  /auth/login:
+    post:
+      summary: Authenticate a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/AuthBadRequest'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '500':
+          $ref: '#/components/responses/AuthInternalServerError'
+
+  /auth/me:
+    get:
+      summary: Get current authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUser'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '500':
+          $ref: '#/components/responses/AuthMeInternalServerError'
+
   /patients:
     get:
       summary: List patients
@@ -175,6 +215,11 @@ paths:
           $ref: '#/components/responses/GetProfessionalInternalServerError'
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
   parameters:
     ResourceID:
       name: id
@@ -269,6 +314,52 @@ components:
             failed_to_load_professional:
               value:
                 error: failed to load professional
+    AuthBadRequest:
+      description: Invalid JSON body or missing credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_json_body:
+              value:
+                error: invalid json body
+            missing_credentials:
+              value:
+                error: email and password are required
+    AuthUnauthorized:
+      description: Invalid credentials or missing/invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                error: unauthorized
+    AuthInternalServerError:
+      description: Unexpected failure while creating the auth session.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_authenticate:
+              value:
+                error: failed to authenticate user
+            failed_to_create_session:
+              value:
+                error: failed to create session
+    AuthMeInternalServerError:
+      description: Unexpected failure while loading the authenticated user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_load_current_user:
+              value:
+                error: failed to load current user
   schemas:
     ErrorResponse:
       type: object
@@ -313,6 +404,70 @@ components:
         environment:
           type: string
           example: development
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+
+    AuthUser:
+      type: object
+      required:
+        - id
+        - email
+        - role
+        - active
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          example: admin
+        professional_id:
+          type: string
+          format: uuid
+          nullable: true
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    LoginResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_at
+        - user
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/AuthUser'
 
     CreatePatientRequest:
       type: object
