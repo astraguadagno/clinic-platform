@@ -73,6 +73,8 @@ services:
       DB_PASSWORD: directory
       BOOTSTRAP_ADMIN_EMAIL: admin@clinic.local
       BOOTSTRAP_ADMIN_PASSWORD: admin123
+      BOOTSTRAP_DOCTOR_EMAIL: doctor@clinic.local
+      BOOTSTRAP_DOCTOR_PASSWORD: doctor123
     ports:
       - "8081:8081"
     depends_on:
@@ -90,9 +92,13 @@ services:
       - >-
         psql -h directory-db -p 5432 -U directory -d directory
         -v ON_ERROR_STOP=1
-        -f /migrations/002_access_auth.sql
+        -f /migrations/002_access_auth.sql &&
+        psql -h directory-db -p 5432 -U directory -d directory
+        -v ON_ERROR_STOP=1
+        -f /migrations/003_clinical_core.sql
     volumes:
       - ../services/directory-service/migrations/002_access_auth.sql:/migrations/002_access_auth.sql:ro
+      - ../services/directory-service/migrations/003_clinical_core.sql:/migrations/003_clinical_core.sql:ro
     depends_on:
       directory-db:
         condition: service_healthy

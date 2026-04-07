@@ -9,3 +9,6 @@ vet:
 
 test:
 	go test ./...
+
+test-integration:
+	go test ./internal/directory -run Integration -count=1

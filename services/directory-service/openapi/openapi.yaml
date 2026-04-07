@@ -145,6 +145,58 @@ paths:
         '500':
           $ref: '#/components/responses/GetPatientInternalServerError'
 
+  /patients/{id}/encounters:
+    get:
+      summary: List patient encounters for current professional
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+      responses:
+        '200':
+          description: Encounters listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EncounterListResponse'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/PatientNotFound'
+        '500':
+          $ref: '#/components/responses/ListEncountersInternalServerError'
+    post:
+      summary: Create patient encounter with initial clinical note
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEncounterRequest'
+      responses:
+        '201':
+          description: Encounter created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Encounter'
+        '400':
+          $ref: '#/components/responses/CreateEncounterBadRequest'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/PatientNotFound'
+        '500':
+          $ref: '#/components/responses/CreateEncounterInternalServerError'
+
   /professionals:
     get:
       summary: List professionals
@@ -360,6 +412,49 @@ components:
             failed_to_load_current_user:
               value:
                 error: failed to load current user
+    ClinicalForbidden:
+      description: Authenticated user is not linked to a professional profile.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            professional_profile_required:
+              value:
+                error: professional profile required
+    CreateEncounterBadRequest:
+      description: Invalid JSON body or encounter validation failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_json_body:
+              value:
+                error: invalid json body
+            failed_to_create_encounter:
+              value:
+                error: failed to create encounter
+    CreateEncounterInternalServerError:
+      description: Unexpected failure while creating the encounter.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_create_encounter:
+              value:
+                error: failed to create encounter
+    ListEncountersInternalServerError:
+      description: Unexpected failure while listing encounters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_list_encounters:
+              value:
+                error: failed to list encounters
   schemas:
     ErrorResponse:
       type: object
@@ -546,6 +641,104 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Patient'
+
+    CreateEncounterRequest:
+      type: object
+      required:
+        - note
+      properties:
+        occurred_at:
+          type: string
+          format: date-time
+        note:
+          type: string
+          minLength: 1
+
+    ClinicalNote:
+      type: object
+      required:
+        - id
+        - encounter_id
+        - chart_id
+        - patient_id
+        - professional_id
+        - kind
+        - content
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        encounter_id:
+          type: string
+          format: uuid
+        chart_id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        professional_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          example: initial
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Encounter:
+      type: object
+      required:
+        - id
+        - chart_id
+        - patient_id
+        - professional_id
+        - occurred_at
+        - created_at
+        - updated_at
+        - initial_note
+      properties:
+        id:
+          type: string
+          format: uuid
+        chart_id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        professional_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        initial_note:
+          $ref: '#/components/schemas/ClinicalNote'
+
+    EncounterListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Encounter'
 
     CreateProfessionalRequest:
       type: object

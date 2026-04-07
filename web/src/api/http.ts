@@ -1,3 +1,5 @@
+import { readStoredSession } from '../auth/session';
+
 type QueryValue = string | number | boolean | null | undefined;
 
 type RequestOptions = {
@@ -5,6 +7,7 @@ type RequestOptions = {
   body?: unknown;
   headers?: HeadersInit;
   query?: Record<string, QueryValue>;
+  auth?: boolean;
 };
 
 export class ApiError extends Error {
@@ -30,12 +33,23 @@ export async function request<T>(baseUrl: string, path: string, options: Request
     }
   }
 
+  const headers = new Headers(options.headers);
+
+  if (options.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (options.auth) {
+    const accessToken = readStoredSession()?.accessToken;
+
+    if (accessToken && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    }
+  }
+
   const response = await fetch(`${baseUrl}${url.pathname}${url.search}`, {
     method: options.method ?? 'GET',
-    headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 

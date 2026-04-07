@@ -23,18 +23,29 @@ type User struct {
 }
 
 type BootstrapAccessParams struct {
-	AdminEmail    string
-	AdminPassword string
+	AdminEmail     string
+	AdminPassword  string
+	DoctorEmail    string
+	DoctorPassword string
 }
+
+const bootstrapDoctorProfessionalID = "8d933ba7-5fae-4a20-9f2c-2f5589f9f522"
 
 func (r *Repository) BootstrapAccess(ctx context.Context, params BootstrapAccessParams) error {
 	email := normalizeEmail(params.AdminEmail)
 	password := strings.TrimSpace(params.AdminPassword)
-	if email == "" || password == "" {
+	doctorEmail := normalizeEmail(params.DoctorEmail)
+	doctorPassword := strings.TrimSpace(params.DoctorPassword)
+	if email == "" || password == "" || doctorEmail == "" || doctorPassword == "" {
 		return ErrValidation
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	adminPasswordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	doctorPasswordHash, err := bcrypt.GenerateFromPassword([]byte(doctorPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
@@ -64,10 +75,36 @@ func (r *Repository) BootstrapAccess(ctx context.Context, params BootstrapAccess
 	}
 
 	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO professionals (id, first_name, last_name, specialty)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (id) DO NOTHING
+	`, bootstrapDoctorProfessionalID, "Elena", "Martinez", "general medicine"); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO users (email, password_hash, role)
 		VALUES ($1, $2, 'admin')
-		ON CONFLICT (email) DO NOTHING
-	`, email, string(passwordHash)); err != nil {
+		ON CONFLICT (email) DO UPDATE
+		SET password_hash = EXCLUDED.password_hash,
+		    role = EXCLUDED.role,
+		    professional_id = NULL,
+		    active = TRUE,
+		    updated_at = NOW()
+	`, email, string(adminPasswordHash)); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO users (email, password_hash, role, professional_id)
+		VALUES ($1, $2, 'doctor', $3)
+		ON CONFLICT (email) DO UPDATE
+		SET password_hash = EXCLUDED.password_hash,
+		    role = EXCLUDED.role,
+		    professional_id = EXCLUDED.professional_id,
+		    active = TRUE,
+		    updated_at = NOW()
+	`, doctorEmail, string(doctorPasswordHash), bootstrapDoctorProfessionalID); err != nil {
 		return err
 	}
 
