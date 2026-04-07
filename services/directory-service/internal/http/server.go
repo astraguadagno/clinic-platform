@@ -29,6 +29,8 @@ type directoryRepository interface {
 	CreatePatient(ctx context.Context, params directory.CreatePatientParams) (directory.Patient, error)
 	ListPatients(ctx context.Context) ([]directory.Patient, error)
 	GetPatientByID(ctx context.Context, id string) (directory.Patient, error)
+	CreateEncounter(ctx context.Context, params directory.CreateEncounterParams) (directory.Encounter, error)
+	ListPatientEncounters(ctx context.Context, patientID, professionalID string) ([]directory.Encounter, error)
 	CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error)
 	ListProfessionals(ctx context.Context) ([]directory.Professional, error)
 	GetProfessionalByID(ctx context.Context, id string) (directory.Professional, error)
@@ -74,6 +76,11 @@ type loginResponse struct {
 	TokenType   string         `json:"token_type"`
 	ExpiresAt   time.Time      `json:"expires_at"`
 	User        directory.User `json:"user"`
+}
+
+type createEncounterRequest struct {
+	OccurredAt string `json:"occurred_at"`
+	Note       string `json:"note"`
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -175,14 +182,28 @@ func (s *Server) patients(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patientByID(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, http.MethodGet)
+	resourcePath := strings.Trim(strings.TrimPrefix(r.URL.Path, "/patients/"), "/")
+	if resourcePath == "" {
+		writeError(w, http.StatusBadRequest, "patient id is required")
 		return
 	}
 
-	id := strings.TrimPrefix(r.URL.Path, "/patients/")
-	if id == "" {
-		writeError(w, http.StatusBadRequest, "patient id is required")
+	parts := strings.Split(resourcePath, "/")
+	if len(parts) == 1 {
+		s.patientResourceByID(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[1] == "encounters" {
+		s.patientEncounters(w, r, parts[0])
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func (s *Server) patientResourceByID(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
 		return
 	}
 
@@ -197,6 +218,17 @@ func (s *Server) patientByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, patient)
+}
+
+func (s *Server) patientEncounters(w http.ResponseWriter, r *http.Request, patientID string) {
+	switch r.Method {
+	case http.MethodGet:
+		s.listPatientEncounters(w, r, patientID)
+	case http.MethodPost:
+		s.createEncounter(w, r, patientID)
+	default:
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
 }
 
 func (s *Server) professionals(w http.ResponseWriter, r *http.Request) {
@@ -265,6 +297,77 @@ func (s *Server) listPatients(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": patients})
 }
 
+func (s *Server) createEncounter(w http.ResponseWriter, r *http.Request, patientID string) {
+	user, err := s.currentProfessionalUser(r)
+	if errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	}
+	if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, "professional profile required")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	var request createEncounterRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	encounter, err := s.repo.CreateEncounter(r.Context(), directory.CreateEncounterParams{
+		PatientID:      patientID,
+		ProfessionalID: *user.ProfessionalID,
+		OccurredAt:     request.OccurredAt,
+		Note:           request.Note,
+	})
+	if errors.Is(err, directory.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "failed to create encounter")
+		return
+	}
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create encounter")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, encounter)
+}
+
+func (s *Server) listPatientEncounters(w http.ResponseWriter, r *http.Request, patientID string) {
+	user, err := s.currentProfessionalUser(r)
+	if errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	}
+	if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, "professional profile required")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	encounters, err := s.repo.ListPatientEncounters(r.Context(), patientID, *user.ProfessionalID)
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list encounters")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": encounters})
+}
+
 func (s *Server) createProfessional(w http.ResponseWriter, r *http.Request) {
 	var request directory.CreateProfessionalParams
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -312,6 +415,10 @@ func writeUnauthorized(w http.ResponseWriter) {
 	writeError(w, http.StatusUnauthorized, "unauthorized")
 }
 
+func writeForbidden(w http.ResponseWriter, message string) {
+	writeError(w, http.StatusForbidden, message)
+}
+
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": message,
@@ -330,6 +437,32 @@ func bearerTokenFromRequest(r *http.Request) (string, error) {
 	}
 
 	return strings.TrimSpace(parts[1]), nil
+}
+
+func (s *Server) currentUser(r *http.Request) (directory.User, error) {
+	token, err := bearerTokenFromRequest(r)
+	if err != nil {
+		return directory.User{}, err
+	}
+
+	user, err := s.repo.GetUserBySessionToken(r.Context(), serviceauth.HashSessionToken(token), time.Now().UTC())
+	if err != nil {
+		return directory.User{}, err
+	}
+
+	return user, nil
+}
+
+func (s *Server) currentProfessionalUser(r *http.Request) (directory.User, error) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		return directory.User{}, err
+	}
+	if user.ProfessionalID == nil || strings.TrimSpace(*user.ProfessionalID) == "" {
+		return directory.User{}, directory.ErrForbidden
+	}
+
+	return user, nil
 }
 
 func (s *Server) authTokenTTL() time.Duration {

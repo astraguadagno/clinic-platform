@@ -43,6 +43,167 @@ func TestCreatePatientReturnsCreatedPatient(t *testing.T) {
 	}
 }
 
+func TestCreateEncounterReturnsUnauthorizedWithoutBearerToken(t *testing.T) {
+	server := NewServer(testConfig(), &stubDirectoryRepository{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients/0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca/encounters", bytes.NewBufferString(`{"note":"Paciente estable"}`))
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestCreateEncounterReturnsForbiddenWithoutProfessionalProfile(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients/0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca/encounters", bytes.NewBufferString(`{"note":"Paciente estable"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestCreateEncounterReturnsCreatedEncounter(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	occurredAt := time.Date(2026, 4, 7, 14, 30, 0, 0, time.UTC)
+	now := time.Date(2026, 4, 7, 14, 31, 0, 0, time.UTC)
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		createEncounterFn: func(_ context.Context, params directory.CreateEncounterParams) (directory.Encounter, error) {
+			if params.PatientID != patientID {
+				t.Fatalf("patientID = %q, want %q", params.PatientID, patientID)
+			}
+			if params.ProfessionalID != professionalID {
+				t.Fatalf("professionalID = %q, want %q", params.ProfessionalID, professionalID)
+			}
+			if params.Note != "Paciente estable" {
+				t.Fatalf("note = %q, want Paciente estable", params.Note)
+			}
+			return directory.Encounter{
+				ID:             "enc-1",
+				ChartID:        "chart-1",
+				PatientID:      patientID,
+				ProfessionalID: professionalID,
+				OccurredAt:     occurredAt,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				InitialNote: directory.ClinicalNote{
+					ID:             "note-1",
+					EncounterID:    "enc-1",
+					ChartID:        "chart-1",
+					PatientID:      patientID,
+					ProfessionalID: professionalID,
+					Kind:           "initial",
+					Content:        "Paciente estable",
+					CreatedAt:      now,
+					UpdatedAt:      now,
+				},
+			}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients/"+patientID+"/encounters", bytes.NewBufferString(`{"occurred_at":"2026-04-07T14:30:00Z","note":"Paciente estable"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+
+	var encounter directory.Encounter
+	if err := json.NewDecoder(recorder.Body).Decode(&encounter); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if encounter.ID != "enc-1" {
+		t.Fatalf("id = %q, want enc-1", encounter.ID)
+	}
+	if encounter.InitialNote.Content != "Paciente estable" {
+		t.Fatalf("initial_note.content = %q, want Paciente estable", encounter.InitialNote.Content)
+	}
+}
+
+func TestListPatientEncountersReturnsItemsForCurrentProfessional(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	now := time.Date(2026, 4, 7, 14, 31, 0, 0, time.UTC)
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		listPatientEncountersFn: func(_ context.Context, gotPatientID, gotProfessionalID string) ([]directory.Encounter, error) {
+			if gotPatientID != patientID {
+				t.Fatalf("patientID = %q, want %q", gotPatientID, patientID)
+			}
+			if gotProfessionalID != professionalID {
+				t.Fatalf("professionalID = %q, want %q", gotProfessionalID, professionalID)
+			}
+			return []directory.Encounter{{
+				ID:             "enc-1",
+				ChartID:        "chart-1",
+				PatientID:      patientID,
+				ProfessionalID: professionalID,
+				OccurredAt:     now,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				InitialNote: directory.ClinicalNote{
+					ID:             "note-1",
+					EncounterID:    "enc-1",
+					ChartID:        "chart-1",
+					PatientID:      patientID,
+					ProfessionalID: professionalID,
+					Kind:           "initial",
+					Content:        "Paciente estable",
+					CreatedAt:      now,
+					UpdatedAt:      now,
+				},
+			}}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients/"+patientID+"/encounters", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response struct {
+		Items []directory.Encounter `json:"items"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(response.Items))
+	}
+	if response.Items[0].ProfessionalID != professionalID {
+		t.Fatalf("professional_id = %q, want %q", response.Items[0].ProfessionalID, professionalID)
+	}
+}
+
 func TestLoginReturnsAccessToken(t *testing.T) {
 	repo := &stubDirectoryRepository{
 		authenticateUserFn: func(_ context.Context, email, password string) (directory.User, error) {
@@ -378,6 +539,8 @@ type stubDirectoryRepository struct {
 	createPatientFn         func(context.Context, directory.CreatePatientParams) (directory.Patient, error)
 	listPatientsFn          func(context.Context) ([]directory.Patient, error)
 	getPatientByIDFn        func(context.Context, string) (directory.Patient, error)
+	createEncounterFn       func(context.Context, directory.CreateEncounterParams) (directory.Encounter, error)
+	listPatientEncountersFn func(context.Context, string, string) ([]directory.Encounter, error)
 	createProfessionalFn    func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error)
 	listProfessionalsFn     func(context.Context) ([]directory.Professional, error)
 	getProfessionalByIDFn   func(context.Context, string) (directory.Professional, error)
@@ -405,6 +568,20 @@ func (s *stubDirectoryRepository) GetPatientByID(ctx context.Context, id string)
 		return directory.Patient{}, errors.New("unexpected GetPatientByID call")
 	}
 	return s.getPatientByIDFn(ctx, id)
+}
+
+func (s *stubDirectoryRepository) CreateEncounter(ctx context.Context, params directory.CreateEncounterParams) (directory.Encounter, error) {
+	if s.createEncounterFn == nil {
+		return directory.Encounter{}, errors.New("unexpected CreateEncounter call")
+	}
+	return s.createEncounterFn(ctx, params)
+}
+
+func (s *stubDirectoryRepository) ListPatientEncounters(ctx context.Context, patientID, professionalID string) ([]directory.Encounter, error) {
+	if s.listPatientEncountersFn == nil {
+		return nil, errors.New("unexpected ListPatientEncounters call")
+	}
+	return s.listPatientEncountersFn(ctx, patientID, professionalID)
 }
 
 func (s *stubDirectoryRepository) CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error) {
