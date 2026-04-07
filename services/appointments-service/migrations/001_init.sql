@@ -26,7 +26,6 @@ CREATE TABLE appointments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     cancelled_at TIMESTAMPTZ,
-    CONSTRAINT appointments_slot_unique UNIQUE (slot_id),
     CONSTRAINT appointments_status_valid CHECK (status IN ('booked', 'cancelled')),
     CONSTRAINT appointments_cancelled_at_consistency CHECK (
         (status = 'booked' AND cancelled_at IS NULL) OR
@@ -35,6 +34,9 @@ CREATE TABLE appointments (
     CONSTRAINT appointments_slot_fk FOREIGN KEY (slot_id) REFERENCES availability_slots(id)
 );
 
+CREATE UNIQUE INDEX appointments_slot_booked_unique_idx
+    ON appointments (slot_id)
+    WHERE status = 'booked';
 CREATE INDEX appointments_patient_id_idx ON appointments (patient_id);
 CREATE INDEX appointments_professional_id_idx ON appointments (professional_id);
 CREATE INDEX appointments_status_idx ON appointments (status);

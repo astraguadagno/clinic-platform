@@ -115,6 +115,56 @@ func TestRepositoryIntegrationAppointmentLifecyclePersistsAppointmentAndSlotStat
 	if !persistedAvailableSlot.UpdatedAt.Equal(persistedCancelledAppointment.UpdatedAt) {
 		t.Fatalf("slot updated_at = %s, want %s", persistedAvailableSlot.UpdatedAt, persistedCancelledAppointment.UpdatedAt)
 	}
+
+	rebookedPatientID := "550e8400-e29b-41d4-a716-446655440012"
+	rebooked, err := repo.CreateAppointment(ctx, CreateAppointmentParams{
+		SlotID:         slots[0].ID,
+		PatientID:      rebookedPatientID,
+		ProfessionalID: professionalID,
+	})
+	if err != nil {
+		t.Fatalf("rebook appointment: %v", err)
+	}
+	if rebooked.Status != "booked" {
+		t.Fatalf("rebooked status = %q, want booked", rebooked.Status)
+	}
+	if rebooked.ID == created.ID {
+		t.Fatal("rebooked appointment reused cancelled appointment id")
+	}
+
+	persistedRebookedAppointment := fetchAppointmentByID(t, db, rebooked.ID)
+	if persistedRebookedAppointment.Status != "booked" {
+		t.Fatalf("persisted rebooked appointment status = %q, want booked", persistedRebookedAppointment.Status)
+	}
+	if persistedRebookedAppointment.PatientID != rebookedPatientID {
+		t.Fatalf("persisted rebooked patient_id = %q, want %q", persistedRebookedAppointment.PatientID, rebookedPatientID)
+	}
+
+	persistedRebookedSlot := fetchSlotByID(t, db, slots[0].ID)
+	if persistedRebookedSlot.Status != "booked" {
+		t.Fatalf("slot status after rebooking = %q, want booked", persistedRebookedSlot.Status)
+	}
+
+	persistedAppointments, err := repo.ListAppointments(ctx, AppointmentFilters{ProfessionalID: professionalID})
+	if err != nil {
+		t.Fatalf("list appointments after rebooking: %v", err)
+	}
+	if len(persistedAppointments) != 2 {
+		t.Fatalf("appointments listed after rebooking = %d, want 2", len(persistedAppointments))
+	}
+
+	activeAppointments := 0
+	for _, appointment := range persistedAppointments {
+		if appointment.SlotID != slots[0].ID {
+			t.Fatalf("appointment slot_id = %q, want %q", appointment.SlotID, slots[0].ID)
+		}
+		if appointment.Status == "booked" {
+			activeAppointments++
+		}
+	}
+	if activeAppointments != 1 {
+		t.Fatalf("active appointments for slot = %d, want 1", activeAppointments)
+	}
 }
 
 func TestRepositoryIntegrationCreateAppointmentRejectsDoubleBookingForSameSlot(t *testing.T) {

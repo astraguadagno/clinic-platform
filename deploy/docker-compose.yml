@@ -48,9 +48,13 @@ services:
       - >-
         psql -h appointments-db -p 5432 -U appointments -d appointments
         -v ON_ERROR_STOP=1
-        -f /migrations/002_prevent_availability_slot_overlaps.sql
+        -f /migrations/002_prevent_availability_slot_overlaps.sql &&
+        psql -h appointments-db -p 5432 -U appointments -d appointments
+        -v ON_ERROR_STOP=1
+        -f /migrations/003_allow_rebooking_cancelled_slots.sql
     volumes:
       - ../services/appointments-service/migrations/002_prevent_availability_slot_overlaps.sql:/migrations/002_prevent_availability_slot_overlaps.sql:ro
+      - ../services/appointments-service/migrations/003_allow_rebooking_cancelled_slots.sql:/migrations/003_allow_rebooking_cancelled_slots.sql:ro
     depends_on:
       appointments-db:
         condition: service_healthy

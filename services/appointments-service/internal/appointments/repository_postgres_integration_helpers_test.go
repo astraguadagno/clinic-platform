@@ -92,7 +92,7 @@ func resetAppointmentsSchema(t *testing.T, db *sql.DB) {
 func applyAppointmentsMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	for _, migration := range []string{"001_init.sql", "002_prevent_availability_slot_overlaps.sql"} {
+	for _, migration := range []string{"001_init.sql", "002_prevent_availability_slot_overlaps.sql", "003_allow_rebooking_cancelled_slots.sql"} {
 		contents := readAppointmentsMigrationFile(t, migration)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
