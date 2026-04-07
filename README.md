@@ -67,16 +67,21 @@ Qué hace este arranque:
 - espera a que cada DB esté saludable y a que el migrador de appointments termine OK antes de levantar su servicio HTTP
 
 > Importante: los scripts de inicialización corren solamente cuando el volumen de la base está vacío.
-> La migración `002_prevent_availability_slot_overlaps.sql` también se ejecuta sobre bases existentes mediante el servicio `appointments-db-migrator`.
+> Las migraciones `002_prevent_availability_slot_overlaps.sql` y `003_allow_rebooking_cancelled_slots.sql` también se ejecutan sobre bases existentes mediante el servicio `appointments-db-migrator`.
 
-### Migración de no solapamiento en appointments
+### Migraciones incrementales en appointments
 
-El constraint `availability_slots_no_overlap` ahora se aplica de dos formas:
+Las reglas incrementales actuales de `appointments-service` se aplican de dos formas:
 
-- en bootstrap limpio, porque `001_init.sql` crea la tabla base y luego corre el migrador one-shot
-- en bases ya existentes, porque `appointments-db-migrator` ejecuta `002_prevent_availability_slot_overlaps.sql` en cada arranque
+- en bootstrap limpio, porque `001_init.sql` crea el esquema base y luego corre el migrador one-shot
+- en bases ya existentes, porque `appointments-db-migrator` ejecuta `002_prevent_availability_slot_overlaps.sql` y `003_allow_rebooking_cancelled_slots.sql` en cada arranque
 
-La migración es idempotente: si el constraint ya existe, no intenta recrearlo.
+Estas migraciones son idempotentes: si la regla ya existe, no intentan recrearla.
+
+Hoy cubren al menos:
+
+- no solapamiento real de slots por profesional (`002`)
+- posibilidad de volver a reservar un slot después de cancelar un appointment, manteniendo unicidad solo para appointments `booked` (`003`)
 
 Limitación importante:
 
