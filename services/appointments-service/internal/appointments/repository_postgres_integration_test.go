@@ -3,6 +3,7 @@ package appointments
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 )
 
@@ -174,5 +175,114 @@ func TestRepositoryIntegrationCreateAppointmentRejectsDoubleBookingForSameSlot(t
 	}
 	if !persistedSlot.UpdatedAt.Equal(persistedAppointment.UpdatedAt) {
 		t.Fatalf("slot updated_at = %s, want %s", persistedSlot.UpdatedAt, persistedAppointment.UpdatedAt)
+	}
+}
+
+func TestRepositoryIntegrationCreateAppointmentConcurrentSameSlotReturnsOneSuccessAndOneConflict(t *testing.T) {
+	repo, db := newPostgresIntegrationRepository(t)
+
+	ctx := context.Background()
+	professionalID := "550e8400-e29b-41d4-a716-446655440030"
+	firstPatientID := "550e8400-e29b-41d4-a716-446655440031"
+	secondPatientID := "550e8400-e29b-41d4-a716-446655440032"
+
+	slots, err := repo.CreateSlotsBulk(ctx, BulkCreateSlotsParams{
+		ProfessionalID:      professionalID,
+		Date:                "2026-04-13",
+		StartTime:           "15:00",
+		EndTime:             "15:30",
+		SlotDurationMinutes: 30,
+	})
+	if err != nil {
+		t.Fatalf("create slots: %v", err)
+	}
+	if len(slots) != 1 {
+		t.Fatalf("slots len = %d, want 1", len(slots))
+	}
+
+	type bookingResult struct {
+		appointment Appointment
+		err         error
+	}
+
+	start := make(chan struct{})
+	results := make(chan bookingResult, 2)
+
+	var ready sync.WaitGroup
+	ready.Add(2)
+
+	book := func(patientID string) {
+		ready.Done()
+		<-start
+
+		appointment, err := repo.CreateAppointment(context.Background(), CreateAppointmentParams{
+			SlotID:         slots[0].ID,
+			PatientID:      patientID,
+			ProfessionalID: professionalID,
+		})
+
+		results <- bookingResult{appointment: appointment, err: err}
+	}
+
+	go book(firstPatientID)
+	go book(secondPatientID)
+
+	ready.Wait()
+	close(start)
+
+	firstResult := <-results
+	secondResult := <-results
+
+	var (
+		successes []Appointment
+		conflicts int
+	)
+
+	for _, result := range []bookingResult{firstResult, secondResult} {
+		switch {
+		case result.err == nil:
+			successes = append(successes, result.appointment)
+		case errors.Is(result.err, ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected create appointment error: %v", result.err)
+		}
+	}
+
+	if len(successes) != 1 {
+		t.Fatalf("successful bookings = %d, want 1", len(successes))
+	}
+	if conflicts != 1 {
+		t.Fatalf("conflicting bookings = %d, want 1", conflicts)
+	}
+
+	persistedAppointments, err := repo.ListAppointments(ctx, AppointmentFilters{ProfessionalID: professionalID})
+	if err != nil {
+		t.Fatalf("list appointments: %v", err)
+	}
+	if len(persistedAppointments) != 1 {
+		t.Fatalf("appointments listed = %d, want 1", len(persistedAppointments))
+	}
+	if got := countAppointments(t, db); got != 1 {
+		t.Fatalf("appointments persisted = %d, want 1", got)
+	}
+
+	persistedAppointment := persistedAppointments[0]
+	if persistedAppointment.Status != "booked" {
+		t.Fatalf("persisted appointment status = %q, want booked", persistedAppointment.Status)
+	}
+	if persistedAppointment.SlotID != slots[0].ID {
+		t.Fatalf("persisted appointment slot_id = %q, want %q", persistedAppointment.SlotID, slots[0].ID)
+	}
+	if persistedAppointment.PatientID != firstPatientID && persistedAppointment.PatientID != secondPatientID {
+		t.Fatalf("persisted appointment patient_id = %q, want one of concurrent patients", persistedAppointment.PatientID)
+	}
+
+	persistedSlot := fetchSlotByID(t, db, slots[0].ID)
+	if persistedSlot.Status != "booked" {
+		t.Fatalf("slot status after concurrent booking = %q, want booked", persistedSlot.Status)
+	}
+	if successes[0].ID != persistedAppointment.ID {
+		t.Fatalf("successful appointment id = %q, want %q", successes[0].ID, persistedAppointment.ID)
 	}
 }
