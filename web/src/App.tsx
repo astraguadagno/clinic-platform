@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuthSession } from './auth/useAuthSession';
 import { LoginScreen } from './features/auth/LoginScreen';
 import { DirectoryDemo } from './features/directory/DirectoryDemo';
+import { PatientsWorkspace } from './features/patients/PatientsWorkspace';
 import { ScheduleDemo } from './features/schedule/ScheduleDemo';
 
 type DemoSurface = 'agenda' | 'directory' | 'patients';
@@ -130,26 +131,9 @@ export default function App() {
 
         {activeSurface === 'agenda' ? <ScheduleDemo /> : null}
         {activeSurface === 'directory' ? <DirectoryDemo /> : null}
-        {activeSurface === 'patients' ? <PatientsPlaceholder /> : null}
+        {activeSurface === 'patients' ? <PatientsWorkspace currentUser={auth.user} /> : null}
       </div>
     </main>
-  );
-}
-
-function PatientsPlaceholder() {
-  return (
-    <section className="card stack">
-      <div className="hero-kicker">Placeholder liviano</div>
-      <h2>Pacientes</h2>
-      <p>
-        Para Sprint 1 dejamos esta superficie mínima para doctor. La agenda sigue siendo el foco y esta nota evita
-        sobre-diseñar antes de tiempo.
-      </p>
-      <div className="status-bar">
-        <span className="badge neutral">Próximo paso: ficha resumida</span>
-        <span className="badge info">Hoy no hay navegación clínica completa</span>
-      </div>
-    </section>
   );
 }
 

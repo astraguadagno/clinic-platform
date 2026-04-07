@@ -51,7 +51,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -432,6 +433,68 @@ button {
   align-items: start;
 }
 
+.patients-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.patients-sidebar {
+  position: sticky;
+  top: 24px;
+}
+
+.patient-selector-list {
+  gap: 10px;
+}
+
+.patient-selector-card {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid #dfe6ee;
+  border-radius: var(--radius-md);
+  background: #fbfcfe;
+  color: var(--text);
+  text-align: left;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.patient-selector-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.patient-selector-card.selected {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: linear-gradient(180deg, #ffffff 0%, #edf4ff 100%);
+}
+
+.patient-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.encounter-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #e3e9f4;
+  border-radius: var(--radius-md);
+  background: #fbfcfe;
+}
+
+.encounter-card h4 {
+  margin: 4px 0 0;
+}
+
+.encounter-note {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .schedule-sidebar {
   position: sticky;
   top: 24px;
@@ -478,7 +541,8 @@ button {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
   min-height: 44px;
   padding: 10px 13px;
@@ -490,10 +554,16 @@ button {
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: none;
   border-color: #6ea8fe;
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.field textarea {
+  min-height: 132px;
+  resize: vertical;
 }
 
 .form-grid-span-full {
@@ -710,6 +780,7 @@ button {
 
 @media (max-width: 980px) {
   .layout,
+  .patients-workspace-grid,
   .directory-grid,
   .hero-summary-grid,
   .overview-grid,
@@ -719,6 +790,10 @@ button {
   }
 
   .schedule-sidebar {
+    position: static;
+  }
+
+  .patients-sidebar {
     position: static;
   }
 }
@@ -746,7 +821,8 @@ button {
   .schedule-stat-grid,
   .schedule-slot-grid,
   .slot-grid,
-  .hero-summary-grid {
+  .hero-summary-grid,
+  .patient-summary-grid {
     grid-template-columns: 1fr;
   }
 
