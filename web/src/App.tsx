@@ -6,7 +6,7 @@ type DemoSurface = 'agenda' | 'directory';
 
 export default function App() {
   const [activeSurface, setActiveSurface] = useState<DemoSurface>('agenda');
-  const activeSurfaceLabel = activeSurface === 'agenda' ? 'Agenda demo' : 'Directorio demo';
+  const activeSurfaceLabel = activeSurface === 'agenda' ? 'Agenda' : 'Directorio';
 
   return (
     <main className="page">
@@ -16,8 +16,8 @@ export default function App() {
           <div className="hero-copy stack-tight">
             <h1>Clinic platform demos</h1>
             <p>
-              Una demo simple, clara y presentable: Agenda para operar turnos y Directorio para cargar datos sin meter
-              complejidad innecesaria.
+              Una demo simple y consistente: Agenda para operar turnos y Directorio para cargar la base sin mezclar
+              contextos.
             </p>
           </div>
 
@@ -25,12 +25,12 @@ export default function App() {
             <article className="summary-tile">
               <span className="summary-label">Superficie activa</span>
               <strong>{activeSurfaceLabel}</strong>
-              <small>Separación conceptual clara para mostrar cada flujo.</small>
+              <small>Cada vista conserva su propio foco.</small>
             </article>
             <article className="summary-tile">
-              <span className="summary-label">Experiencia demo</span>
-              <strong>Simple y prolija</strong>
-              <small>Sin routing pesado ni UI kits, pero con look de producto.</small>
+              <span className="summary-label">Objetivo</span>
+              <strong>Demo clara</strong>
+              <small>Menos ruido visual, más legibilidad operativa.</small>
             </article>
           </div>
         </header>
@@ -38,10 +38,10 @@ export default function App() {
         <section className="surface-switcher card stack-tight" aria-label="Selector de demo">
           <div className="surface-switcher-header">
             <div>
-              <h2>Elegí qué querés mostrar</h2>
-              <p>Cada tab mantiene su foco: operación diaria en Agenda y carga liviana en Directorio.</p>
+              <h2>Elegí la superficie</h2>
+              <p>Agenda prioriza la operación diaria. Directorio mantiene la carga de datos aparte.</p>
             </div>
-            <span className="badge neutral">Sin routing complejo</span>
+            <span className="badge neutral">Demo liviana</span>
           </div>
 
           <div className="surface-tabs" role="tablist" aria-label="Superficies demo">
@@ -52,8 +52,8 @@ export default function App() {
               className={`surface-tab${activeSurface === 'agenda' ? ' active' : ''}`}
               onClick={() => setActiveSurface('agenda')}
             >
-              <span className="surface-tab-eyebrow">Operación</span>
-              <strong>Agenda demo</strong>
+              <span className="surface-tab-eyebrow">Operación diaria</span>
+              <strong>Agenda</strong>
               <small>Slots, reservas y cancelaciones.</small>
             </button>
             <button
@@ -63,8 +63,8 @@ export default function App() {
               className={`surface-tab${activeSurface === 'directory' ? ' active' : ''}`}
               onClick={() => setActiveSurface('directory')}
             >
-              <span className="surface-tab-eyebrow">Base demo</span>
-              <strong>Directorio demo</strong>
+              <span className="surface-tab-eyebrow">Carga base</span>
+              <strong>Directorio</strong>
               <small>Alta rápida de pacientes y profesionales.</small>
             </button>
           </div>

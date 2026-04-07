@@ -60,6 +60,11 @@ export function ScheduleDemo() {
     [appointments],
   );
 
+  const cancelledAppointmentsCount = useMemo(
+    () => appointments.filter((appointment) => appointment.status === 'cancelled').length,
+    [appointments],
+  );
+
   const bootstrap = useCallback(async () => {
     try {
       setIsBootstrapping(true);
@@ -228,59 +233,85 @@ export function ScheduleDemo() {
   }
 
   return (
-    <div className="stack">
-      <header className="hero section-hero-card card">
-        <div className="hero-kicker">Operación diaria demo</div>
-        <h1>Agenda demo</h1>
-        <p>
-          Vertical slice simple para mostrar disponibilidad, reservar turnos y cancelar sobre los servicios actuales,
-          con foco en una experiencia más clara para demo.
-        </p>
-        <div className="status-bar">
-          <span className="badge neutral">Profesionales activos: {professionals.length}</span>
-          <span className="badge neutral">Pacientes activos: {patients.length}</span>
-          <span className="badge info">Refresca datos del Directorio al volver al tab</span>
-          {successMessage ? <span className="badge success">{successMessage}</span> : null}
-          {errorMessage ? <span className="badge error">{errorMessage}</span> : null}
+    <div className="stack schedule-demo">
+      <header className="card schedule-hero">
+        <div className="schedule-hero-copy stack">
+          <div className="hero-kicker">Operación diaria demo</div>
+          <div className="stack-tight">
+            <h1>Agenda demo</h1>
+            <p>
+              Una vista un poco más destacada, pero alineada con el resto de la app: elegir profesional, generar
+              disponibilidad, reservar turnos y cancelar sobre los endpoints actuales.
+            </p>
+          </div>
+
+          <div className="schedule-hero-badges status-bar">
+            <span className="badge neutral">Profesionales activos: {professionals.length}</span>
+            <span className="badge neutral">Pacientes activos: {patients.length}</span>
+            <span className="badge neutral">Slots del día: {daySlots.length}</span>
+            <span className="badge info">UTC fijo para evitar corrimientos</span>
+          </div>
+
+          {(successMessage || errorMessage) && (
+            <div className="status-bar">
+              {successMessage ? <span className="badge success">{successMessage}</span> : null}
+              {errorMessage ? <span className="badge error">{errorMessage}</span> : null}
+            </div>
+          )}
+        </div>
+
+        <div className="schedule-hero-panel">
+          <div className="schedule-hero-panel-head">
+            <span className="summary-label">Agenda seleccionada</span>
+            <strong>{selectedProfessional ? `${selectedProfessional.first_name} ${selectedProfessional.last_name}` : 'Sin profesional'}</strong>
+            <small>{selectedProfessional?.specialty ?? 'Elegí un profesional para operar la agenda.'}</small>
+          </div>
+
+          <div className="schedule-stat-grid">
+            <article className="schedule-stat-card">
+              <span className="summary-label">Fecha</span>
+              <strong>{formatLongDate(selectedDate)}</strong>
+              <small>Filtrado real por día.</small>
+            </article>
+            <article className="schedule-stat-card">
+              <span className="summary-label">Disponibles</span>
+              <strong>{availableSlots.length}</strong>
+              <small>{availableSlots.length > 0 ? 'Listos para reservar.' : 'Todavía sin carga.'}</small>
+            </article>
+            <article className="schedule-stat-card">
+              <span className="summary-label">Reservados</span>
+              <strong>{bookedAppointmentsCount}</strong>
+              <small>Turnos activos del día.</small>
+            </article>
+            <article className="schedule-stat-card">
+              <span className="summary-label">Cancelados</span>
+              <strong>{cancelledAppointmentsCount}</strong>
+              <small>Historial visible en agenda.</small>
+            </article>
+          </div>
         </div>
       </header>
 
-      <section className="overview-grid">
-        <article className="overview-card card">
-          <span className="summary-label">Fecha elegida</span>
-          <strong>{formatLongDate(selectedDate)}</strong>
-          <small>{selectedProfessional ? 'Vista filtrada por profesional.' : 'Elegí un profesional para operar.'}</small>
-        </article>
-        <article className="overview-card card">
-          <span className="summary-label">Disponibilidad</span>
-          <strong>{availableSlots.length} slots</strong>
-          <small>{availableSlots.length > 0 ? 'Hay horarios listos para reservar.' : 'No hay disponibilidad cargada aún.'}</small>
-        </article>
-        <article className="overview-card card">
-          <span className="summary-label">Turnos del día</span>
-          <strong>{bookedAppointmentsCount} activos</strong>
-          <small>{appointments.length} registros totales contando cancelados.</small>
-        </article>
-      </section>
-
-      <div className="layout">
-        <aside className="card stack card-accent">
+      <div className="layout schedule-layout">
+        <aside className="schedule-sidebar stack">
+          <section className="card card-accent schedule-controls-card stack">
             <div>
-              <h2>Controles</h2>
-              <p className="helper">Directo a los endpoints existentes, con pasos guiados y feedback visual más claro.</p>
+              <span className="summary-label">Contexto</span>
+              <h2>Filtros de agenda</h2>
+              <p className="helper">La demo sigue el backend real: profesional, fecha, slots y turnos del día.</p>
             </div>
 
             <div className="field">
               <label htmlFor="professional">Profesional</label>
-                <select
-                  id="professional"
-                  value={selectedProfessionalId}
-                  onChange={(event) => {
-                    clearReleasedSlotFeedback();
-                    setSelectedProfessionalId(event.target.value);
-                  }}
-                  disabled={isBootstrapping || professionals.length === 0}
-                >
+              <select
+                id="professional"
+                value={selectedProfessionalId}
+                onChange={(event) => {
+                  clearReleasedSlotFeedback();
+                  setSelectedProfessionalId(event.target.value);
+                }}
+                disabled={isBootstrapping || professionals.length === 0}
+              >
                 {professionals.length === 0 ? <option value="">No hay profesionales</option> : null}
                 {professionals.map((professional) => (
                   <option key={professional.id} value={professional.id}>
@@ -301,6 +332,84 @@ export function ScheduleDemo() {
                   setSelectedDate(event.target.value);
                 }}
               />
+              <small className="helper">La fecha se interpreta en UTC, igual que slots y appointments del backend.</small>
+            </div>
+
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => {
+                clearReleasedSlotFeedback();
+                void refreshAgenda();
+              }}
+              disabled={isBootstrapping || isRefreshingAgenda}
+            >
+              {isRefreshingAgenda ? 'Actualizando...' : 'Refrescar agenda'}
+            </button>
+          </section>
+
+          <section className="card schedule-generator-card stack" aria-labelledby="generate-slots-title">
+            <div className="stack-tight">
+              <span className="summary-label schedule-dark-eyebrow">Automatización</span>
+              <h2 id="generate-slots-title">Generar slots</h2>
+              <p className="helper">Creá disponibilidad real sobre el profesional y la fecha elegidos.</p>
+            </div>
+
+            <div className="time-grid">
+              <div className="field">
+                <label htmlFor="slot-start-time">Desde</label>
+                <input
+                  id="slot-start-time"
+                  type="time"
+                  value={slotStartTime}
+                  onChange={(event) => setSlotStartTime(event.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="slot-end-time">Hasta</label>
+                <input id="slot-end-time" type="time" value={slotEndTime} onChange={(event) => setSlotEndTime(event.target.value)} />
+              </div>
+            </div>
+
+            <div className="field">
+              <label htmlFor="slot-duration">Duración del slot</label>
+              <select
+                id="slot-duration"
+                value={slotDurationMinutes}
+                onChange={(event) => setSlotDurationMinutes(Number(event.target.value) as BulkCreateSlotsPayload['slot_duration_minutes'])}
+              >
+                {[15, 20, 30, 60].map((duration) => (
+                  <option key={duration} value={duration}>
+                    {duration} minutos
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="schedule-generator-summary">
+              <span>Ventana</span>
+              <strong>
+                {slotStartTime} → {slotEndTime}
+              </strong>
+              <small>{slotDurationMinutes} min por slot</small>
+            </div>
+
+            <button
+              className="button schedule-generator-button"
+              type="button"
+              onClick={() => void handleCreateSlots()}
+              disabled={isBootstrapping || isRefreshingAgenda || isCreatingSlots || !selectedProfessionalId || !selectedDate}
+            >
+              {isCreatingSlots ? 'Generando...' : 'Generar slots'}
+            </button>
+          </section>
+
+          <section className="card schedule-booking-card stack">
+            <div>
+              <span className="summary-label">Reserva</span>
+              <h2>Reservar turno</h2>
+              <p className="helper">Seleccioná paciente y uno de los slots realmente disponibles.</p>
             </div>
 
             <div className="field">
@@ -320,54 +429,6 @@ export function ScheduleDemo() {
               </select>
             </div>
 
-            <section className="subsection stack" aria-labelledby="generate-slots-title">
-              <div>
-                <h3 id="generate-slots-title">Generar slots</h3>
-                <p className="helper">Usá el mismo profesional y fecha para crear disponibilidad rápida y mostrar movimiento.</p>
-              </div>
-
-              <div className="time-grid">
-                <div className="field">
-                  <label htmlFor="slot-start-time">Desde</label>
-                  <input
-                    id="slot-start-time"
-                    type="time"
-                    value={slotStartTime}
-                    onChange={(event) => setSlotStartTime(event.target.value)}
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="slot-end-time">Hasta</label>
-                  <input id="slot-end-time" type="time" value={slotEndTime} onChange={(event) => setSlotEndTime(event.target.value)} />
-                </div>
-              </div>
-
-              <div className="field">
-                <label htmlFor="slot-duration">Duración del slot</label>
-                <select
-                  id="slot-duration"
-                  value={slotDurationMinutes}
-                  onChange={(event) => setSlotDurationMinutes(Number(event.target.value) as BulkCreateSlotsPayload['slot_duration_minutes'])}
-                >
-                  {[15, 20, 30, 60].map((duration) => (
-                    <option key={duration} value={duration}>
-                      {duration} minutos
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => void handleCreateSlots()}
-                disabled={isBootstrapping || isRefreshingAgenda || isCreatingSlots || !selectedProfessionalId || !selectedDate}
-              >
-                {isCreatingSlots ? 'Generando...' : 'Generar slots'}
-              </button>
-            </section>
-
             <div className="field">
               <label htmlFor="slot">Slot a reservar</label>
               <select
@@ -385,35 +446,23 @@ export function ScheduleDemo() {
               </select>
             </div>
 
-            <div className="toolbar">
-              <button
-                className="button"
-                type="button"
-                onClick={() => void handleBookAppointment()}
-                disabled={isBootstrapping || isRefreshingAgenda || isBooking || !selectedSlotId || !selectedPatientId}
-              >
-                {isBooking ? 'Reservando...' : 'Reservar turno'}
-              </button>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => {
-                  clearReleasedSlotFeedback();
-                  void refreshAgenda();
-                }}
-                disabled={isBootstrapping || isRefreshingAgenda}
-              >
-                {isRefreshingAgenda ? 'Actualizando...' : 'Refrescar agenda'}
-              </button>
-            </div>
+            <button
+              className="button"
+              type="button"
+              onClick={() => void handleBookAppointment()}
+              disabled={isBootstrapping || isRefreshingAgenda || isBooking || !selectedSlotId || !selectedPatientId}
+            >
+              {isBooking ? 'Reservando...' : 'Reservar turno'}
+            </button>
 
             <div className="inline-note">
-              <strong>Tip demo:</strong> si cargás un paciente o profesional en Directorio, al volver a Agenda se actualiza la
+              <strong>Tip demo:</strong> si cargás un paciente o profesional en Directorio, al volver a Agenda se refresca la
               base disponible sin recargar toda la app.
             </div>
+          </section>
         </aside>
 
-        <section className="stack">
+        <section className="stack schedule-main">
           <article className="card">
             <div className="section-header">
               <div>
@@ -443,7 +492,7 @@ export function ScheduleDemo() {
                     </div>
                   ) : null}
 
-                  <div className="slot-grid">
+                  <div className="slot-grid schedule-slot-grid">
                     {availableSlots.map((slot) => {
                       const isSelected = slot.id === selectedSlotId;
                       const isRecentlyReleased = slot.id === releasedSlotId;
@@ -462,8 +511,9 @@ export function ScheduleDemo() {
                             }
                           }}
                         >
+                          <span className="slot-card-kicker">Slot disponible</span>
                           <strong>{formatDateTimeRange(slot.start_time, slot.end_time)}</strong>
-                          {isRecentlyReleased ? <span className="slot-note">Liberado recién</span> : null}
+                          <span className="slot-note">{isRecentlyReleased ? 'Liberado recién' : 'Listo para reservar'}</span>
                         </button>
                       );
                     })}
@@ -476,7 +526,7 @@ export function ScheduleDemo() {
             <div className="section-header">
               <div>
                 <h2>Turnos del día</h2>
-                <p>Listado simple con cancelación inmediata y badges más legibles para explicar el estado.</p>
+                <p>Listado simple con cancelación inmediata y estados fáciles de leer.</p>
               </div>
               <span className="badge neutral">{appointments.length} total</span>
             </div>
@@ -489,7 +539,7 @@ export function ScheduleDemo() {
                 <span>Reservá uno desde un slot disponible para que la demo muestre el flujo completo.</span>
               </div>
             ) : (
-                <div className="list">
+                <div className="list schedule-appointments-list">
                   {appointments.map((appointment) => {
                     const slot = slotById.get(appointment.slot_id);
                     const patientName = patientNameById.get(appointment.patient_id) ?? appointment.patient_id;
@@ -497,18 +547,24 @@ export function ScheduleDemo() {
 
                     return (
                       <div key={appointment.id} className="appointment-item">
-                        <div>
-                          <strong>{slot ? formatDateTimeRange(slot.start_time, slot.end_time) : 'Horario no disponible'}</strong>
-                          <small>{appointment.id}</small>
+                        <div className="appointment-main">
+                          <div className="appointment-avatar" aria-hidden="true">
+                            {getInitials(patientName)}
+                          </div>
+
+                          <div className="stack-tight">
+                            <strong>{patientName}</strong>
+                            <small>{slot ? formatDateTimeRange(slot.start_time, slot.end_time) : 'Horario no disponible'}</small>
+                          </div>
                         </div>
 
                         <div className="appointment-meta">
                           <span className={`pill${isCancelled ? ' cancelled' : ''}`}>{isCancelled ? 'Cancelado' : 'Reservado'}</span>
-                          <span className="muted">Paciente: {patientName}</span>
+                          <span className="muted">Appointment: {appointment.id}</span>
                           <span className="muted">Slot: {appointment.slot_id}</span>
                         </div>
 
-                        <div>
+                        <div className="appointment-actions">
                           <button
                             className="button ghost"
                             type="button"
@@ -528,6 +584,15 @@ export function ScheduleDemo() {
       </div>
     </div>
   );
+}
+
+function getInitials(fullName: string) {
+  return fullName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((chunk) => chunk[0]?.toUpperCase() ?? '')
+    .join('');
 }
 
 function compareByStartTime(left: Slot, right: Slot) {
