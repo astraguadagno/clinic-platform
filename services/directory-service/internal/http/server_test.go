@@ -15,6 +15,9 @@ import (
 
 func TestCreatePatientReturnsCreatedPatient(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
 		createPatientFn: func(_ context.Context, params directory.CreatePatientParams) (directory.Patient, error) {
 			if params.FirstName != "Ada" {
 				t.Fatalf("first_name = %q, want Ada", params.FirstName)
@@ -27,6 +30,7 @@ func TestCreatePatientReturnsCreatedPatient(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	body := bytes.NewBufferString(`{"first_name":"Ada","last_name":"Lovelace","document":"123","birth_date":"1990-10-10","phone":"555"}`)
 	request := httptest.NewRequest(http.MethodPost, "/patients", body)
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -40,6 +44,59 @@ func TestCreatePatientReturnsCreatedPatient(t *testing.T) {
 	}
 	if patient.ID != "patient-1" {
 		t.Fatalf("id = %q, want patient-1", patient.ID)
+	}
+}
+
+func TestListPatientsReturnsUnauthorizedWithoutBearerToken(t *testing.T) {
+	server := NewServer(testConfig(), &stubDirectoryRepository{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients", nil)
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestListPatientsReturnsForbiddenForUnsupportedRole(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "guest@clinic.local", Role: "guest", Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestListPatientsReturnsItemsForDoctor(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", Active: true}, nil
+		},
+		listPatientsFn: func(context.Context) ([]directory.Patient, error) {
+			return []directory.Patient{{ID: "patient-1", FirstName: "Ada", LastName: "Lovelace", Document: "123", BirthDate: "1990-10-10", Phone: "555", Active: true}}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 }
 
@@ -59,6 +116,26 @@ func TestCreateEncounterReturnsForbiddenWithoutProfessionalProfile(t *testing.T)
 	repo := &stubDirectoryRepository{
 		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
 			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients/0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca/encounters", bytes.NewBufferString(`{"note":"Paciente estable"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestCreateEncounterReturnsForbiddenForNonDoctorRole(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "secretary@clinic.local", Role: "secretary", ProfessionalID: &professionalID, Active: true}, nil
 		},
 	}
 
@@ -374,6 +451,9 @@ func TestPatientByIDReturnsNotFound(t *testing.T) {
 
 func TestListProfessionalsReturnsItems(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "secretary@clinic.local", Role: "secretary", Active: true}, nil
+		},
 		listProfessionalsFn: func(context.Context) ([]directory.Professional, error) {
 			return []directory.Professional{{ID: "pro-1", FirstName: "Ana", LastName: "Lopez", Specialty: "cardiology", Active: true}}, nil
 		},
@@ -382,6 +462,7 @@ func TestListProfessionalsReturnsItems(t *testing.T) {
 	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/professionals", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -401,9 +482,15 @@ func TestListProfessionalsReturnsItems(t *testing.T) {
 }
 
 func TestCreateProfessionalReturnsBadRequestOnInvalidJSON(t *testing.T) {
-	server := NewServer(testConfig(), &stubDirectoryRepository{})
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
+	}
+	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":`))
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -414,6 +501,9 @@ func TestCreateProfessionalReturnsBadRequestOnInvalidJSON(t *testing.T) {
 
 func TestCreatePatientInvalidBirthDateReturnsBadRequest(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "secretary@clinic.local", Role: "secretary", Active: true}, nil
+		},
 		createPatientFn: func(context.Context, directory.CreatePatientParams) (directory.Patient, error) {
 			return directory.Patient{}, directory.ErrValidation
 		},
@@ -422,6 +512,7 @@ func TestCreatePatientInvalidBirthDateReturnsBadRequest(t *testing.T) {
 	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/patients", bytes.NewBufferString(`{"first_name":"Ada","last_name":"Lovelace","document":"123","birth_date":"10-10-1990","phone":"555"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -432,6 +523,9 @@ func TestCreatePatientInvalidBirthDateReturnsBadRequest(t *testing.T) {
 
 func TestCreatePatientMissingRequiredFieldReturnsBadRequest(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "secretary@clinic.local", Role: "secretary", Active: true}, nil
+		},
 		createPatientFn: func(context.Context, directory.CreatePatientParams) (directory.Patient, error) {
 			return directory.Patient{}, directory.ErrValidation
 		},
@@ -440,6 +534,7 @@ func TestCreatePatientMissingRequiredFieldReturnsBadRequest(t *testing.T) {
 	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/patients", bytes.NewBufferString(`{"first_name":"Ada","last_name":"","document":"123","birth_date":"1990-10-10","phone":"555"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -450,6 +545,9 @@ func TestCreatePatientMissingRequiredFieldReturnsBadRequest(t *testing.T) {
 
 func TestCreatePatientUnexpectedRepoErrorReturnsInternalServerError(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
 		createPatientFn: func(context.Context, directory.CreatePatientParams) (directory.Patient, error) {
 			return directory.Patient{}, errors.New("db down")
 		},
@@ -458,6 +556,7 @@ func TestCreatePatientUnexpectedRepoErrorReturnsInternalServerError(t *testing.T
 	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/patients", bytes.NewBufferString(`{"first_name":"Ada","last_name":"Lovelace","document":"123","birth_date":"1990-10-10","phone":"555"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -468,6 +567,9 @@ func TestCreatePatientUnexpectedRepoErrorReturnsInternalServerError(t *testing.T
 
 func TestCreateProfessionalValidReturnsCreated(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
 		createProfessionalFn: func(_ context.Context, params directory.CreateProfessionalParams) (directory.Professional, error) {
 			if params.Specialty != "cardiology" {
 				t.Fatalf("specialty = %q, want cardiology", params.Specialty)
@@ -479,6 +581,7 @@ func TestCreateProfessionalValidReturnsCreated(t *testing.T) {
 	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":"Ana","last_name":"Lopez","specialty":"cardiology"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -489,6 +592,9 @@ func TestCreateProfessionalValidReturnsCreated(t *testing.T) {
 
 func TestCreateProfessionalMissingSpecialtyReturnsBadRequest(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
 		createProfessionalFn: func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error) {
 			return directory.Professional{}, directory.ErrValidation
 		},
@@ -497,6 +603,7 @@ func TestCreateProfessionalMissingSpecialtyReturnsBadRequest(t *testing.T) {
 	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":"Ana","last_name":"Lopez","specialty":""}`))
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -507,6 +614,9 @@ func TestCreateProfessionalMissingSpecialtyReturnsBadRequest(t *testing.T) {
 
 func TestCreateProfessionalUnexpectedRepoErrorReturnsInternalServerError(t *testing.T) {
 	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "admin@clinic.local", Role: "admin", Active: true}, nil
+		},
 		createProfessionalFn: func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error) {
 			return directory.Professional{}, errors.New("db down")
 		},
@@ -515,6 +625,7 @@ func TestCreateProfessionalUnexpectedRepoErrorReturnsInternalServerError(t *test
 	server := NewServer(testConfig(), repo)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":"Ana","last_name":"Lopez","specialty":"cardiology"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
 
 	server.ServeHTTP(recorder, request)
 
@@ -662,5 +773,24 @@ func TestGetProfessionalByIDReturnsProfessional(t *testing.T) {
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}
+
+func TestCreateProfessionalReturnsForbiddenForSecretary(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "secretary@clinic.local", Role: "secretary", Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/professionals", bytes.NewBufferString(`{"first_name":"Ana","last_name":"Lopez","specialty":"cardiology"}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
 	}
 }

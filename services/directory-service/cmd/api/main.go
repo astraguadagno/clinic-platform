@@ -25,10 +25,12 @@ func main() {
 	repo := directory.NewRepository(repository)
 	if appEnv == "local" || appEnv == "docker" {
 		if err := repo.BootstrapAccess(context.Background(), directory.BootstrapAccessParams{
-			AdminEmail:     envOrDefault("BOOTSTRAP_ADMIN_EMAIL", "admin@clinic.local"),
-			AdminPassword:  envOrDefault("BOOTSTRAP_ADMIN_PASSWORD", "admin123"),
-			DoctorEmail:    envOrDefault("BOOTSTRAP_DOCTOR_EMAIL", "doctor@clinic.local"),
-			DoctorPassword: envOrDefault("BOOTSTRAP_DOCTOR_PASSWORD", "doctor123"),
+			AdminEmail:        envOrDefault("BOOTSTRAP_ADMIN_EMAIL", "admin@clinic.local"),
+			AdminPassword:     envOrDefault("BOOTSTRAP_ADMIN_PASSWORD", "admin123"),
+			SecretaryEmail:    envOrDefault("BOOTSTRAP_SECRETARY_EMAIL", "secretary@clinic.local"),
+			SecretaryPassword: envOrDefault("BOOTSTRAP_SECRETARY_PASSWORD", "secretary123"),
+			DoctorEmail:       envOrDefault("BOOTSTRAP_DOCTOR_EMAIL", "doctor@clinic.local"),
+			DoctorPassword:    envOrDefault("BOOTSTRAP_DOCTOR_PASSWORD", "doctor123"),
 		}); err != nil {
 			log.Fatal(err)
 		}

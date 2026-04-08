@@ -23,10 +23,12 @@ type User struct {
 }
 
 type BootstrapAccessParams struct {
-	AdminEmail     string
-	AdminPassword  string
-	DoctorEmail    string
-	DoctorPassword string
+	AdminEmail        string
+	AdminPassword     string
+	SecretaryEmail    string
+	SecretaryPassword string
+	DoctorEmail       string
+	DoctorPassword    string
 }
 
 const bootstrapDoctorProfessionalID = "8d933ba7-5fae-4a20-9f2c-2f5589f9f522"
@@ -34,9 +36,11 @@ const bootstrapDoctorProfessionalID = "8d933ba7-5fae-4a20-9f2c-2f5589f9f522"
 func (r *Repository) BootstrapAccess(ctx context.Context, params BootstrapAccessParams) error {
 	email := normalizeEmail(params.AdminEmail)
 	password := strings.TrimSpace(params.AdminPassword)
+	secretaryEmail := normalizeEmail(params.SecretaryEmail)
+	secretaryPassword := strings.TrimSpace(params.SecretaryPassword)
 	doctorEmail := normalizeEmail(params.DoctorEmail)
 	doctorPassword := strings.TrimSpace(params.DoctorPassword)
-	if email == "" || password == "" || doctorEmail == "" || doctorPassword == "" {
+	if email == "" || password == "" || secretaryEmail == "" || secretaryPassword == "" || doctorEmail == "" || doctorPassword == "" {
 		return ErrValidation
 	}
 
@@ -46,6 +50,11 @@ func (r *Repository) BootstrapAccess(ctx context.Context, params BootstrapAccess
 	}
 
 	doctorPasswordHash, err := bcrypt.GenerateFromPassword([]byte(doctorPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	secretaryPasswordHash, err := bcrypt.GenerateFromPassword([]byte(secretaryPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
@@ -61,6 +70,7 @@ func (r *Repository) BootstrapAccess(ctx context.Context, params BootstrapAccess
 		Description string
 	}{
 		{Name: "admin", Description: "Platform administrator"},
+		{Name: "secretary", Description: "Front desk and coordination user"},
 		{Name: "doctor", Description: "Healthcare professional user"},
 	}
 
@@ -92,6 +102,19 @@ func (r *Repository) BootstrapAccess(ctx context.Context, params BootstrapAccess
 		    active = TRUE,
 		    updated_at = NOW()
 	`, email, string(adminPasswordHash)); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO users (email, password_hash, role)
+		VALUES ($1, $2, 'secretary')
+		ON CONFLICT (email) DO UPDATE
+		SET password_hash = EXCLUDED.password_hash,
+		    role = EXCLUDED.role,
+		    professional_id = NULL,
+		    active = TRUE,
+		    updated_at = NOW()
+	`, secretaryEmail, string(secretaryPasswordHash)); err != nil {
 		return err
 	}
 

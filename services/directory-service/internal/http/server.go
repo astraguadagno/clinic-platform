@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -268,6 +269,10 @@ func (s *Server) professionalByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createPatient(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireUserWithAnyRole(w, r, "admin", "secretary"); !ok {
+		return
+	}
+
 	var request directory.CreatePatientParams
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
@@ -288,6 +293,10 @@ func (s *Server) createPatient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listPatients(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireUserWithAnyRole(w, r, "admin", "secretary", "doctor"); !ok {
+		return
+	}
+
 	patients, err := s.repo.ListPatients(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list patients")
@@ -298,13 +307,13 @@ func (s *Server) listPatients(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createEncounter(w http.ResponseWriter, r *http.Request, patientID string) {
-	user, err := s.currentProfessionalUser(r)
+	user, err := s.currentDoctorUser(r)
 	if errors.Is(err, directory.ErrUnauthorized) {
 		writeUnauthorized(w)
 		return
 	}
 	if errors.Is(err, directory.ErrForbidden) {
-		writeForbidden(w, "professional profile required")
+		writeForbidden(w, authorizationErrorMessage(err))
 		return
 	}
 	if err != nil {
@@ -341,13 +350,13 @@ func (s *Server) createEncounter(w http.ResponseWriter, r *http.Request, patient
 }
 
 func (s *Server) listPatientEncounters(w http.ResponseWriter, r *http.Request, patientID string) {
-	user, err := s.currentProfessionalUser(r)
+	user, err := s.currentDoctorUser(r)
 	if errors.Is(err, directory.ErrUnauthorized) {
 		writeUnauthorized(w)
 		return
 	}
 	if errors.Is(err, directory.ErrForbidden) {
-		writeForbidden(w, "professional profile required")
+		writeForbidden(w, authorizationErrorMessage(err))
 		return
 	}
 	if err != nil {
@@ -369,6 +378,10 @@ func (s *Server) listPatientEncounters(w http.ResponseWriter, r *http.Request, p
 }
 
 func (s *Server) createProfessional(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireUserWithAnyRole(w, r, "admin"); !ok {
+		return
+	}
+
 	var request directory.CreateProfessionalParams
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
@@ -389,6 +402,10 @@ func (s *Server) createProfessional(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listProfessionals(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireUserWithAnyRole(w, r, "admin", "secretary", "doctor"); !ok {
+		return
+	}
+
 	professionals, err := s.repo.ListProfessionals(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list professionals")
@@ -463,6 +480,53 @@ func (s *Server) currentProfessionalUser(r *http.Request) (directory.User, error
 	}
 
 	return user, nil
+}
+
+func (s *Server) currentDoctorUser(r *http.Request) (directory.User, error) {
+	user, err := s.currentUser(r)
+	if err != nil {
+		return directory.User{}, err
+	}
+	if user.Role != "doctor" {
+		return directory.User{}, errors.Join(directory.ErrForbidden, errDoctorRoleRequired)
+	}
+	if user.ProfessionalID == nil || strings.TrimSpace(*user.ProfessionalID) == "" {
+		return directory.User{}, errors.Join(directory.ErrForbidden, errProfessionalProfileRequired)
+	}
+
+	return user, nil
+}
+
+var errDoctorRoleRequired = errors.New("doctor role required")
+var errProfessionalProfileRequired = errors.New("professional profile required")
+
+func (s *Server) requireUserWithAnyRole(w http.ResponseWriter, r *http.Request, roles ...string) (directory.User, bool) {
+	user, err := s.currentUser(r)
+	if errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return directory.User{}, false
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return directory.User{}, false
+	}
+	if !slices.Contains(roles, user.Role) {
+		writeForbidden(w, "insufficient role")
+		return directory.User{}, false
+	}
+
+	return user, true
+}
+
+func authorizationErrorMessage(err error) string {
+	if errors.Is(err, errDoctorRoleRequired) {
+		return errDoctorRoleRequired.Error()
+	}
+	if errors.Is(err, errProfessionalProfileRequired) {
+		return errProfessionalProfileRequired.Error()
+	}
+
+	return "forbidden"
 }
 
 func (s *Server) authTokenTTL() time.Duration {
