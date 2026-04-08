@@ -421,6 +421,128 @@ func TestDoctorCannotCrossProfessionalScope(t *testing.T) {
 	assertErrorResponse(t, recorder.Body, "forbidden professional scope")
 }
 
+func TestDoctorCanAccessOwnAgenda(t *testing.T) {
+	doctorProfessionalID := "550e8400-e29b-41d4-a716-446655440010"
+	createdAt := time.Date(2026, time.April, 10, 9, 0, 0, 0, time.UTC)
+	cancelledAt := createdAt.Add(30 * time.Minute)
+
+	t.Run("list slots uses doctor professional scope", func(t *testing.T) {
+		repoCalled := false
+		repo := &stubAppointmentsRepository{
+			listSlotsFn: func(_ context.Context, filters appointments.SlotFilters) ([]appointments.AvailabilitySlot, error) {
+				repoCalled = true
+				if filters.ProfessionalID != doctorProfessionalID {
+					t.Fatalf("filters.ProfessionalID = %q, want %q", filters.ProfessionalID, doctorProfessionalID)
+				}
+				return []appointments.AvailabilitySlot{{ID: "slot-1", ProfessionalID: doctorProfessionalID, Status: "available"}}, nil
+			},
+		}
+		dir := &stubDirectoryLookup{currentUser: directory.User{ID: "user-1", Role: "doctor", ProfessionalID: &doctorProfessionalID, Active: true}}
+		server := NewServer(testAppointmentsConfig(), repo, dir)
+		recorder := httptest.NewRecorder()
+
+		server.ServeHTTP(recorder, newAuthenticatedRequest(http.MethodGet, "/slots?professional_id="+doctorProfessionalID, nil))
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+		}
+		if !repoCalled {
+			t.Fatal("expected repo to be called")
+		}
+	})
+
+	t.Run("create appointment accepts doctor professional scope", func(t *testing.T) {
+		repo := &stubAppointmentsRepository{
+			createAppointmentFn: func(_ context.Context, params appointments.CreateAppointmentParams) (appointments.Appointment, error) {
+				if params.ProfessionalID != doctorProfessionalID {
+					t.Fatalf("params.ProfessionalID = %q, want %q", params.ProfessionalID, doctorProfessionalID)
+				}
+				return appointments.Appointment{
+					ID:             "appt-1",
+					SlotID:         "550e8400-e29b-41d4-a716-446655440000",
+					PatientID:      "550e8400-e29b-41d4-a716-446655440001",
+					ProfessionalID: doctorProfessionalID,
+					Status:         "booked",
+					CreatedAt:      createdAt,
+					UpdatedAt:      createdAt,
+				}, nil
+			},
+		}
+		dir := &stubDirectoryLookup{
+			currentUser:        directory.User{ID: "user-1", Role: "doctor", ProfessionalID: &doctorProfessionalID, Active: true},
+			professionalExists: true,
+			patientExists:      true,
+		}
+		server := NewServer(testAppointmentsConfig(), repo, dir)
+		recorder := httptest.NewRecorder()
+		body := bytes.NewBufferString(`{"slot_id":"550e8400-e29b-41d4-a716-446655440000","patient_id":"550e8400-e29b-41d4-a716-446655440001","professional_id":"` + doctorProfessionalID + `"}`)
+
+		server.ServeHTTP(recorder, newAuthenticatedRequest(http.MethodPost, "/appointments", body))
+
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+		}
+		if dir.professionalCalls != 1 {
+			t.Fatalf("ProfessionalExists calls = %d, want 1", dir.professionalCalls)
+		}
+		if dir.patientCalls != 1 {
+			t.Fatalf("PatientExists calls = %d, want 1", dir.patientCalls)
+		}
+	})
+
+	t.Run("cancel appointment allows doctor owned appointment", func(t *testing.T) {
+		repo := &stubAppointmentsRepository{
+			getAppointmentByIDFn: func(_ context.Context, appointmentID string) (appointments.Appointment, error) {
+				if appointmentID != "550e8400-e29b-41d4-a716-446655440099" {
+					t.Fatalf("appointmentID = %q, want owned appointment", appointmentID)
+				}
+				return appointments.Appointment{ID: appointmentID, ProfessionalID: doctorProfessionalID, Status: "booked"}, nil
+			},
+			cancelAppointmentFn: func(_ context.Context, appointmentID string) (appointments.Appointment, error) {
+				return appointments.Appointment{ID: appointmentID, ProfessionalID: doctorProfessionalID, Status: "cancelled", CancelledAt: &cancelledAt}, nil
+			},
+		}
+		dir := &stubDirectoryLookup{currentUser: directory.User{ID: "user-1", Role: "doctor", ProfessionalID: &doctorProfessionalID, Active: true}}
+		server := NewServer(testAppointmentsConfig(), repo, dir)
+		recorder := httptest.NewRecorder()
+
+		server.ServeHTTP(recorder, newAuthenticatedRequest(http.MethodPatch, "/appointments/550e8400-e29b-41d4-a716-446655440099/cancel", nil))
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+		}
+		if repo.cancelAppointmentCalls != 1 {
+			t.Fatalf("CancelAppointment calls = %d, want 1", repo.cancelAppointmentCalls)
+		}
+	})
+}
+
+func TestSecretaryCanAccessSharedAgenda(t *testing.T) {
+	sharedProfessionalID := "550e8400-e29b-41d4-a716-446655440222"
+	repoCalled := false
+	repo := &stubAppointmentsRepository{
+		listAppointmentsFn: func(_ context.Context, filters appointments.AppointmentFilters) ([]appointments.Appointment, error) {
+			repoCalled = true
+			if filters.ProfessionalID != sharedProfessionalID {
+				t.Fatalf("filters.ProfessionalID = %q, want %q", filters.ProfessionalID, sharedProfessionalID)
+			}
+			return []appointments.Appointment{{ID: "appt-1", ProfessionalID: sharedProfessionalID, Status: "booked"}}, nil
+		},
+	}
+	dir := &stubDirectoryLookup{currentUser: directory.User{ID: "user-2", Role: "secretary", Active: true}}
+	server := NewServer(testAppointmentsConfig(), repo, dir)
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, newAuthenticatedRequest(http.MethodGet, "/appointments?professional_id="+sharedProfessionalID, nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if !repoCalled {
+		t.Fatal("expected repo to be called")
+	}
+}
+
 func TestAgendaEndpointsFailClosedWhenDirectorySessionValidationFails(t *testing.T) {
 	dir := &stubDirectoryLookup{currentUserErr: directory.ErrUnavailable}
 	server := NewServer(testAppointmentsConfig(), &stubAppointmentsRepository{}, dir)
