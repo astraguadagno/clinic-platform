@@ -73,6 +73,8 @@ paths:
   /patients:
     get:
       summary: List patients
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Patients listed
@@ -82,8 +84,14 @@ paths:
                 $ref: '#/components/schemas/PatientListResponse'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
     post:
       summary: Create patient
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -112,6 +120,10 @@ paths:
                     updated_at: '2026-04-06T12:00:00Z'
         '400':
           $ref: '#/components/responses/CreatePatientBadRequest'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
         '500':
           $ref: '#/components/responses/CreatePatientInternalServerError'
 
@@ -200,6 +212,8 @@ paths:
   /professionals:
     get:
       summary: List professionals
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Professionals listed
@@ -209,8 +223,14 @@ paths:
                 $ref: '#/components/schemas/ProfessionalListResponse'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
     post:
       summary: Create professional
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -236,6 +256,10 @@ paths:
                     updated_at: '2026-04-06T12:00:00Z'
         '400':
           $ref: '#/components/responses/CreateProfessionalBadRequest'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/RoleForbidden'
         '500':
           $ref: '#/components/responses/CreateProfessionalInternalServerError'
 
@@ -413,15 +437,28 @@ components:
               value:
                 error: failed to load current user
     ClinicalForbidden:
-      description: Authenticated user is not linked to a professional profile.
+      description: Authenticated user lacks the doctor role or professional profile required by clinical endpoints.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
           examples:
+            doctor_role_required:
+              value:
+                error: doctor role required
             professional_profile_required:
               value:
                 error: professional profile required
+    RoleForbidden:
+      description: Authenticated user does not have one of the allowed roles for the endpoint.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            insufficient_role:
+              value:
+                error: insufficient role
     CreateEncounterBadRequest:
       description: Invalid JSON body or encounter validation failure.
       content:

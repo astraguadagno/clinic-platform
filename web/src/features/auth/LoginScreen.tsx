@@ -57,7 +57,7 @@ export function LoginScreen({ errorMessage, isSubmitting, onLogin }: LoginScreen
               <button className="button" type="submit" disabled={isSubmitting}>
                 {isSubmitting ? 'Ingresando...' : 'Iniciar sesión'}
               </button>
-              <span className="helper helper-inline">Demo seed verificada: admin@clinic.local / admin123</span>
+              <span className="helper helper-inline">Seeds demo: admin/admin123 · secretary/secretary123 · doctor/doctor123</span>
             </div>
 
             {errorMessage ? <div className="inline-note inline-note-error">{errorMessage}</div> : null}
