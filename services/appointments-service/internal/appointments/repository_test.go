@@ -165,6 +165,42 @@ func TestCreateSlotsBulkReturnsConflictWhenBulkHitsExistingSlots(t *testing.T) {
 	}
 }
 
+func TestGetAppointmentByIDReturnsAppointment(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 10, 9, 0, 0, 0, time.UTC)
+	repo := NewRepository(newScriptedDB(t, []scriptedQueryResult{{
+		row: newAppointmentRow(
+			"550e8400-e29b-41d4-a716-446655440099",
+			"550e8400-e29b-41d4-a716-446655440010",
+			"550e8400-e29b-41d4-a716-446655440011",
+			"550e8400-e29b-41d4-a716-446655440012",
+			"booked",
+			now,
+			now,
+			nil,
+		),
+	}}))
+
+	appointment, err := repo.GetAppointmentByID(context.Background(), "550e8400-e29b-41d4-a716-446655440099")
+	if err != nil {
+		t.Fatalf("GetAppointmentByID error = %v", err)
+	}
+	if appointment.ProfessionalID != "550e8400-e29b-41d4-a716-446655440011" {
+		t.Fatalf("professional_id = %q, want own agenda id", appointment.ProfessionalID)
+	}
+}
+
+func TestGetAppointmentByIDReturnsValidationOnBadID(t *testing.T) {
+	t.Parallel()
+
+	repo := NewRepository(newScriptedDB(t, nil))
+	_, err := repo.GetAppointmentByID(context.Background(), "bad-id")
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("err = %v, want %v", err, ErrValidation)
+	}
+}
+
 func newScriptedDB(t *testing.T, results []scriptedQueryResult) *sql.DB {
 	t.Helper()
 
@@ -183,6 +219,14 @@ func newScriptedDB(t *testing.T, results []scriptedQueryResult) *sql.DB {
 func newSlotRow(id, professionalID string, startTime, endTime time.Time) []driver.Value {
 	now := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
 	return []driver.Value{id, professionalID, startTime, endTime, "available", now, now}
+}
+
+func newAppointmentRow(id, slotID, professionalID, patientID, status string, createdAt, updatedAt time.Time, cancelledAt *time.Time) []driver.Value {
+	var cancelled any = nil
+	if cancelledAt != nil {
+		cancelled = *cancelledAt
+	}
+	return []driver.Value{id, slotID, professionalID, patientID, status, createdAt, updatedAt, cancelled}
 }
 
 type scriptedDriver struct {
@@ -242,7 +286,12 @@ type scriptedRows struct {
 }
 
 func (r *scriptedRows) Columns() []string {
-	return []string{"id", "professional_id", "start_time", "end_time", "status", "created_at", "updated_at"}
+	switch len(r.row) {
+	case 8:
+		return []string{"id", "slot_id", "professional_id", "patient_id", "status", "created_at", "updated_at", "cancelled_at"}
+	default:
+		return []string{"id", "professional_id", "start_time", "end_time", "status", "created_at", "updated_at"}
+	}
 }
 
 func (r *scriptedRows) Close() error { return nil }

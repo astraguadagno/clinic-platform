@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"clinic-platform/services/appointments-service/internal/appointments"
+	"clinic-platform/services/appointments-service/internal/directory"
 )
 
 type Config struct {
@@ -29,12 +31,20 @@ type appointmentsRepository interface {
 	ListSlots(ctx context.Context, filters appointments.SlotFilters) ([]appointments.AvailabilitySlot, error)
 	CreateAppointment(ctx context.Context, params appointments.CreateAppointmentParams) (appointments.Appointment, error)
 	ListAppointments(ctx context.Context, filters appointments.AppointmentFilters) ([]appointments.Appointment, error)
+	GetAppointmentByID(ctx context.Context, appointmentID string) (appointments.Appointment, error)
 	CancelAppointment(ctx context.Context, appointmentID string) (appointments.Appointment, error)
 }
 
 type directoryLookup interface {
+	CurrentUser(ctx context.Context, bearer string) (directory.User, error)
 	ProfessionalExists(ctx context.Context, professionalID string) (bool, error)
 	PatientExists(ctx context.Context, patientID string) (bool, error)
+}
+
+type ActorContext struct {
+	UserID         string
+	Role           string
+	ProfessionalID string
 }
 
 func NewServer(config Config, repo appointmentsRepository, dir directoryLookup) *Server {
@@ -94,9 +104,20 @@ func (s *Server) bulkSlots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+
 	var request appointments.BulkCreateSlotsParams
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	request.ProfessionalID, ok = enforceProfessionalScope(actor, request.ProfessionalID)
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
 		return
 	}
 	if err := appointments.ValidateBulkCreateSlotsParams(request); errors.Is(err, appointments.ErrValidation) {
@@ -148,10 +169,19 @@ func (s *Server) appointmentByIDAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+
 	path := strings.TrimPrefix(r.URL.Path, "/appointments/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] != "cancel" {
 		writeError(w, http.StatusNotFound, "route not found")
+		return
+	}
+
+	if ok := s.authorizeCancelAppointment(w, r, actor, parts[0]); !ok {
 		return
 	}
 
@@ -177,8 +207,19 @@ func (s *Server) appointmentByIDAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listSlots(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+
+	professionalID, ok := enforceProfessionalScope(actor, r.URL.Query().Get("professional_id"))
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
+		return
+	}
+
 	filters := appointments.SlotFilters{
-		ProfessionalID: r.URL.Query().Get("professional_id"),
+		ProfessionalID: professionalID,
 		Status:         r.URL.Query().Get("status"),
 		Date:           r.URL.Query().Get("date"),
 	}
@@ -197,9 +238,20 @@ func (s *Server) listSlots(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createAppointment(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+
 	var request appointments.CreateAppointmentParams
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	request.ProfessionalID, ok = enforceProfessionalScope(actor, request.ProfessionalID)
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
 		return
 	}
 	if err := appointments.ValidateCreateAppointmentParams(request); errors.Is(err, appointments.ErrValidation) {
@@ -249,8 +301,19 @@ func (s *Server) createAppointment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listAppointments(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+
+	professionalID, ok := enforceProfessionalScope(actor, r.URL.Query().Get("professional_id"))
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
+		return
+	}
+
 	filters := appointments.AppointmentFilters{
-		ProfessionalID: r.URL.Query().Get("professional_id"),
+		ProfessionalID: professionalID,
 		PatientID:      r.URL.Query().Get("patient_id"),
 		Status:         r.URL.Query().Get("status"),
 		Date:           r.URL.Query().Get("date"),
@@ -276,6 +339,11 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Bearer realm="appointments-service"`)
+	writeError(w, http.StatusUnauthorized, "unauthorized")
+}
+
 func writeMethodNotAllowed(w http.ResponseWriter, methods ...string) {
 	w.Header().Set("Allow", strings.Join(methods, ", "))
 	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -285,4 +353,104 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": message,
 	})
+}
+
+func bearerTokenFromRequest(r *http.Request) (string, error) {
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authorization == "" {
+		return "", directory.ErrUnauthorized
+	}
+
+	parts := strings.SplitN(authorization, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
+		return "", directory.ErrUnauthorized
+	}
+
+	return strings.TrimSpace(parts[1]), nil
+}
+
+func (s *Server) currentActor(r *http.Request) (ActorContext, error) {
+	bearer, err := bearerTokenFromRequest(r)
+	if err != nil {
+		return ActorContext{}, err
+	}
+
+	user, err := s.dir.CurrentUser(r.Context(), bearer)
+	if err != nil {
+		return ActorContext{}, err
+	}
+
+	actor := ActorContext{
+		UserID: user.ID,
+		Role:   strings.TrimSpace(user.Role),
+	}
+	if user.ProfessionalID != nil {
+		actor.ProfessionalID = strings.TrimSpace(*user.ProfessionalID)
+	}
+
+	return actor, nil
+}
+
+func (s *Server) requireAgendaActor(w http.ResponseWriter, r *http.Request) (ActorContext, bool) {
+	actor, err := s.currentActor(r)
+	if errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return ActorContext{}, false
+	}
+	if errors.Is(err, directory.ErrUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return ActorContext{}, false
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return ActorContext{}, false
+	}
+	if !slices.Contains([]string{"admin", "secretary", "doctor"}, actor.Role) {
+		writeError(w, http.StatusForbidden, "insufficient role")
+		return ActorContext{}, false
+	}
+	if actor.Role == "doctor" && actor.ProfessionalID == "" {
+		writeError(w, http.StatusForbidden, "professional profile required")
+		return ActorContext{}, false
+	}
+
+	return actor, true
+}
+
+func enforceProfessionalScope(actor ActorContext, requestedProfessionalID string) (string, bool) {
+	requestedProfessionalID = strings.TrimSpace(requestedProfessionalID)
+	if actor.Role != "doctor" {
+		return requestedProfessionalID, true
+	}
+	if requestedProfessionalID == "" {
+		return actor.ProfessionalID, true
+	}
+
+	return requestedProfessionalID, requestedProfessionalID == actor.ProfessionalID
+}
+
+func (s *Server) authorizeCancelAppointment(w http.ResponseWriter, r *http.Request, actor ActorContext, appointmentID string) bool {
+	if actor.Role != "doctor" {
+		return true
+	}
+
+	appointment, err := s.repo.GetAppointmentByID(r.Context(), appointmentID)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid appointment id")
+		return false
+	}
+	if errors.Is(err, appointments.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "appointment not found")
+		return false
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load appointment")
+		return false
+	}
+	if strings.TrimSpace(appointment.ProfessionalID) != actor.ProfessionalID {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
+		return false
+	}
+
+	return true
 }
