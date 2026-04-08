@@ -129,7 +129,7 @@ export default function App() {
           </div>
         </section>
 
-        {activeSurface === 'agenda' ? <ScheduleDemo /> : null}
+		{activeSurface === 'agenda' ? <ScheduleDemo currentUser={auth.user} onSessionInvalid={auth.logout} /> : null}
         {activeSurface === 'directory' ? <DirectoryDemo /> : null}
         {activeSurface === 'patients' ? <PatientsWorkspace currentUser={auth.user} /> : null}
       </div>

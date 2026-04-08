@@ -316,6 +316,26 @@ func (r *Repository) ListAppointments(ctx context.Context, filters AppointmentFi
 	return appointments, nil
 }
 
+func (r *Repository) GetAppointmentByID(ctx context.Context, appointmentID string) (Appointment, error) {
+	if _, err := uuid.Parse(strings.TrimSpace(appointmentID)); err != nil {
+		return Appointment{}, ErrValidation
+	}
+
+	appointment, err := scanAppointment(r.db.QueryRowContext(ctx, `
+		SELECT id, slot_id, professional_id, patient_id, status, created_at, updated_at, cancelled_at
+		FROM appointments
+		WHERE id = $1
+	`, strings.TrimSpace(appointmentID)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Appointment{}, ErrNotFound
+	}
+	if err != nil {
+		return Appointment{}, err
+	}
+
+	return appointment, nil
+}
+
 func (r *Repository) CancelAppointment(ctx context.Context, appointmentID string) (Appointment, error) {
 	if _, err := uuid.Parse(strings.TrimSpace(appointmentID)); err != nil {
 		return Appointment{}, ErrValidation

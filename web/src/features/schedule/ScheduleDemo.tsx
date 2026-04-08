@@ -2,11 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelAppointment, createAppointment, createSlotsBulk, listAppointments, listSlots } from '../../api/appointments';
 import { listPatients, listProfessionals } from '../../api/directory';
 import { ApiError } from '../../api/http';
+import type { AuthUser } from '../../types/auth';
 import type { Appointment, BulkCreateSlotsPayload, Slot } from '../../types/appointments';
 import type { Patient, Professional } from '../../types/directory';
 import { formatDateInputValue, formatDateTimeRange, formatLongDate } from './helpers';
 
-export function ScheduleDemo() {
+type ScheduleDemoProps = {
+  currentUser: AuthUser;
+  onSessionInvalid: () => void;
+};
+
+export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProps) {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedProfessionalId, setSelectedProfessionalId] = useState('');
@@ -21,6 +27,7 @@ export function ScheduleDemo() {
   const [isBooking, setIsBooking] = useState(false);
   const [cancellingAppointmentId, setCancellingAppointmentId] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [releasedSlotId, setReleasedSlotId] = useState('');
   const [releasedSlotLabel, setReleasedSlotLabel] = useState('');
@@ -34,6 +41,50 @@ export function ScheduleDemo() {
     setReleasedSlotId('');
     setReleasedSlotLabel('');
   }, []);
+
+  const actorMode = useMemo(() => {
+    if (currentUser.role === 'doctor') {
+      const professionalId = currentUser.professional_id?.trim() ?? '';
+
+      if (!professionalId) {
+        return { kind: 'forbidden' as const, message: 'Tu usuario doctor no tiene professional_id asociado.' };
+      }
+
+      return { kind: 'doctor' as const, professionalId };
+    }
+
+    if (currentUser.role === 'admin' || currentUser.role === 'secretary') {
+      return { kind: 'shared' as const };
+    }
+
+    return { kind: 'forbidden' as const, message: 'Tu rol no tiene acceso a la agenda.' };
+  }, [currentUser.professional_id, currentUser.role]);
+
+  const isDoctorAgenda = actorMode.kind === 'doctor';
+
+  const handleApiFailure = useCallback(
+    (error: unknown, fallbackMessage: string) => {
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          onSessionInvalid();
+          return { errorMessage: '', accessDeniedMessage: '' };
+        }
+
+        if (error.status === 403) {
+          return { errorMessage: '', accessDeniedMessage: error.message || 'Acceso denegado.' };
+        }
+
+        return { errorMessage: error.message, accessDeniedMessage: '' };
+      }
+
+      if (error instanceof Error) {
+        return { errorMessage: error.message, accessDeniedMessage: '' };
+      }
+
+      return { errorMessage: fallbackMessage, accessDeniedMessage: '' };
+    },
+    [onSessionInvalid],
+  );
 
   const selectedProfessional = useMemo(
     () => professionals.find((professional) => professional.id === selectedProfessionalId) ?? null,
@@ -66,9 +117,20 @@ export function ScheduleDemo() {
   );
 
   const bootstrap = useCallback(async () => {
+    if (actorMode.kind === 'forbidden') {
+      setProfessionals([]);
+      setPatients([]);
+      setSelectedProfessionalId('');
+      setSelectedPatientId('');
+      setAccessDeniedMessage(actorMode.message);
+      setIsBootstrapping(false);
+      return;
+    }
+
     try {
       setIsBootstrapping(true);
       setErrorMessage('');
+      setAccessDeniedMessage('');
 
       const [professionalsResponse, patientsResponse] = await Promise.all([listProfessionals(), listPatients()]);
 
@@ -77,20 +139,33 @@ export function ScheduleDemo() {
 
       setProfessionals(nextProfessionals);
       setPatients(nextPatients);
-      setSelectedProfessionalId((current) =>
-        nextProfessionals.some((professional) => professional.id === current) ? current : nextProfessionals[0]?.id || '',
-      );
+      setSelectedProfessionalId((current) => {
+        if (actorMode.kind === 'doctor') {
+          return actorMode.professionalId;
+        }
+
+	      return nextProfessionals.some((professional) => professional.id === current) ? current : nextProfessionals[0]?.id || '';
+	    });
       setSelectedPatientId((current) =>
         nextPatients.some((patient) => patient.id === current) ? current : nextPatients[0]?.id || '',
       );
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudieron cargar profesionales y pacientes.'));
+		const nextError = handleApiFailure(error, 'No se pudieron cargar profesionales y pacientes.');
+		setErrorMessage(nextError.errorMessage);
+		setAccessDeniedMessage(nextError.accessDeniedMessage);
     } finally {
       setIsBootstrapping(false);
     }
-  }, []);
+  }, [actorMode, handleApiFailure]);
 
   const refreshAgenda = useCallback(async () => {
+	  if (actorMode.kind === 'forbidden') {
+		setDaySlots([]);
+		setAppointments([]);
+		setSelectedSlotId('');
+		return;
+	  }
+
     if (!selectedProfessionalId || !selectedDate) {
       setDaySlots([]);
       setAppointments([]);
@@ -101,6 +176,7 @@ export function ScheduleDemo() {
     try {
       setIsRefreshingAgenda(true);
       setErrorMessage('');
+      setAccessDeniedMessage('');
 
       const [slotsResponse, appointmentsResponse] = await Promise.all([
         listSlots({ professional_id: selectedProfessionalId, date: selectedDate }),
@@ -119,14 +195,16 @@ export function ScheduleDemo() {
         '',
       );
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudo cargar la agenda seleccionada.'));
+		const nextError = handleApiFailure(error, 'No se pudo cargar la agenda seleccionada.');
+		setErrorMessage(nextError.errorMessage);
+		setAccessDeniedMessage(nextError.accessDeniedMessage);
       setDaySlots([]);
       setAppointments([]);
       setSelectedSlotId('');
     } finally {
       setIsRefreshingAgenda(false);
     }
-  }, [selectedDate, selectedProfessionalId]);
+  }, [actorMode.kind, handleApiFailure, selectedDate, selectedProfessionalId]);
 
   useEffect(() => {
     if (isBootstrapping) {
@@ -149,6 +227,7 @@ export function ScheduleDemo() {
     try {
       setIsBooking(true);
       setErrorMessage('');
+      setAccessDeniedMessage('');
       setSuccessMessage('');
       clearReleasedSlotFeedback();
 
@@ -161,7 +240,9 @@ export function ScheduleDemo() {
       setSuccessMessage('Turno reservado correctamente.');
       await refreshAgenda();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudo reservar el turno.'));
+		const nextError = handleApiFailure(error, 'No se pudo reservar el turno.');
+		setErrorMessage(nextError.errorMessage);
+		setAccessDeniedMessage(nextError.accessDeniedMessage);
     } finally {
       setIsBooking(false);
     }
@@ -174,6 +255,7 @@ export function ScheduleDemo() {
     try {
       setCancellingAppointmentId(appointmentId);
       setErrorMessage('');
+      setAccessDeniedMessage('');
       setSuccessMessage('');
 
       await cancelAppointment(appointmentId);
@@ -188,7 +270,9 @@ export function ScheduleDemo() {
       );
       await refreshAgenda();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudo cancelar el turno.'));
+		const nextError = handleApiFailure(error, 'No se pudo cancelar el turno.');
+		setErrorMessage(nextError.errorMessage);
+		setAccessDeniedMessage(nextError.accessDeniedMessage);
     } finally {
       setCancellingAppointmentId('');
     }
@@ -208,6 +292,7 @@ export function ScheduleDemo() {
     try {
       setIsCreatingSlots(true);
       setErrorMessage('');
+      setAccessDeniedMessage('');
       setSuccessMessage('');
       clearReleasedSlotFeedback();
 
@@ -226,10 +311,22 @@ export function ScheduleDemo() {
       );
       await refreshAgenda();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudieron generar los slots.'));
+		const nextError = handleApiFailure(error, 'No se pudieron generar los slots.');
+		setErrorMessage(nextError.errorMessage);
+		setAccessDeniedMessage(nextError.accessDeniedMessage);
     } finally {
       setIsCreatingSlots(false);
     }
+  }
+
+  if (actorMode.kind === 'forbidden') {
+    return (
+      <section className="card stack schedule-demo" aria-live="polite">
+        <div className="hero-kicker">Agenda bloqueada</div>
+        <h1>Acceso denegado</h1>
+        <p>{actorMode.message}</p>
+      </section>
+    );
   }
 
   return (
@@ -252,10 +349,11 @@ export function ScheduleDemo() {
             <span className="badge info">UTC fijo para evitar corrimientos</span>
           </div>
 
-          {(successMessage || errorMessage) && (
+          {(successMessage || errorMessage || accessDeniedMessage) && (
             <div className="status-bar">
               {successMessage ? <span className="badge success">{successMessage}</span> : null}
               {errorMessage ? <span className="badge error">{errorMessage}</span> : null}
+              {accessDeniedMessage ? <span className="badge error">Acceso denegado: {accessDeniedMessage}</span> : null}
             </div>
           )}
         </div>
@@ -303,22 +401,29 @@ export function ScheduleDemo() {
 
             <div className="field">
               <label htmlFor="professional">Profesional</label>
-              <select
-                id="professional"
-                value={selectedProfessionalId}
-                onChange={(event) => {
-                  clearReleasedSlotFeedback();
-                  setSelectedProfessionalId(event.target.value);
-                }}
-                disabled={isBootstrapping || professionals.length === 0}
-              >
-                {professionals.length === 0 ? <option value="">No hay profesionales</option> : null}
-                {professionals.map((professional) => (
-                  <option key={professional.id} value={professional.id}>
-                    {professional.first_name} {professional.last_name} · {professional.specialty}
-                  </option>
-                ))}
-              </select>
+              {isDoctorAgenda ? (
+                <div className="inline-note">
+                  <strong>{selectedProfessional ? `${selectedProfessional.first_name} ${selectedProfessional.last_name}` : 'Mi agenda'}</strong>
+                  <span>{selectedProfessional?.specialty ?? 'Agenda fija por ownership del doctor.'}</span>
+                </div>
+              ) : (
+                <select
+                  id="professional"
+                  value={selectedProfessionalId}
+                  onChange={(event) => {
+                    clearReleasedSlotFeedback();
+                    setSelectedProfessionalId(event.target.value);
+                  }}
+                  disabled={isBootstrapping || professionals.length === 0}
+                >
+                  {professionals.length === 0 ? <option value="">No hay profesionales</option> : null}
+                  {professionals.map((professional) => (
+                    <option key={professional.id} value={professional.id}>
+                      {professional.first_name} {professional.last_name} · {professional.specialty}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="field">
