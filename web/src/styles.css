@@ -79,7 +79,6 @@ button {
 .app-shell-frame {
   gap: 20px;
 }
-
 .auth-shell {
   max-width: 560px;
 }
@@ -836,6 +835,83 @@ button {
   background: #f0fdf4;
 }
 
+.schedule-week-board {
+  display: grid;
+  gap: 12px;
+  overflow-x: auto;
+}
+
+.schedule-week-header,
+.schedule-week-row,
+.schedule-week-empty-grid {
+  display: grid;
+  grid-template-columns: minmax(72px, 88px) repeat(5, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+  min-width: 1080px;
+}
+
+.schedule-week-axis {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 8px;
+  border-radius: var(--radius-md);
+  background: rgba(87, 0, 0, 0.04);
+  border: 1px solid rgba(87, 0, 0, 0.08);
+}
+
+.schedule-day-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(87, 0, 0, 0.08);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(250, 245, 241, 0.96) 100%);
+  text-align: left;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.schedule-day-card:hover {
+  border-color: rgba(115, 92, 0, 0.26);
+  box-shadow: var(--shadow-soft);
+}
+
+.schedule-day-card.selected {
+  border-color: rgba(115, 92, 0, 0.28);
+  background: var(--schedule-gold-soft);
+}
+
+.schedule-week-row {
+  position: relative;
+}
+
+.schedule-week-row.selected::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  background: rgba(115, 92, 0, 0.05);
+  pointer-events: none;
+}
+
+.schedule-week-row > * {
+  position: relative;
+  z-index: 1;
+}
+
+.schedule-board-cell {
+  min-height: 132px;
+  display: grid;
+  align-content: start;
+  padding: 0;
+}
+
+.schedule-board-cell.selected-day {
+  border-color: rgba(115, 92, 0, 0.2);
+  background: rgba(255, 252, 246, 0.98);
+}
+
 .slot-note,
 .muted {
   color: var(--text-muted);
@@ -978,4 +1054,9 @@ button {
     font-size: 1.8rem;
   }
 
+  .schedule-week-header,
+  .schedule-week-row,
+  .schedule-week-empty-grid {
+    min-width: 980px;
+  }
 }
