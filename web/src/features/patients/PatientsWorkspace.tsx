@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type PatientsMode } from '../../auth/actorCapabilities';
+import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import { createPatientEncounter, listPatientEncounters } from '../../api/clinical';
 import { listPatients } from '../../api/directory';
-import { ApiError } from '../../api/http';
-import type { AuthUser } from '../../types/auth';
 import type { CreateEncounterPayload, Encounter, Patient } from '../../types/clinical';
 
 type PatientsWorkspaceProps = {
-  currentUser: AuthUser;
+  patientsMode: PatientsMode;
+  onSessionInvalid: () => void;
 };
 
 type EncounterFormState = {
@@ -19,7 +20,7 @@ const EMPTY_ENCOUNTER_FORM: EncounterFormState = {
   occurred_at: '',
 };
 
-export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
+export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWorkspaceProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [encounters, setEncounters] = useState<Encounter[]>([]);
@@ -32,38 +33,92 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
   const [formError, setFormError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const canAccessClinical = Boolean(currentUser.professional_id);
   const activePatients = useMemo(() => patients.filter((patient) => patient.active), [patients]);
   const selectedPatient = activePatients.find((patient) => patient.id === selectedPatientId) ?? null;
+  const canAccessClinical = patientsMode.kind === 'doctor-clinical';
+  const clinicalDeniedMessage =
+    patientsMode.kind === 'secretary-operational'
+      ? 'Este perfil secretaría puede buscar y seleccionar pacientes, pero no ver ni registrar encounters clínicos.'
+      : patientsMode.kind === 'forbidden'
+        ? patientsMode.message
+        : '';
+
+  const resolveViewError = useCallback(
+    (error: unknown, fallbackMessage: string, forbiddenFallbackMessage: string) => {
+      const resolution = resolveAuthenticatedViewError(error, onSessionInvalid, fallbackMessage, forbiddenFallbackMessage);
+
+      if (resolution.kind === 'session-invalid') {
+        return { errorMessage: '', deniedMessage: '' };
+      }
+
+      if (resolution.kind === 'forbidden') {
+        return { errorMessage: '', deniedMessage: resolution.message };
+      }
+
+      return { errorMessage: resolution.message, deniedMessage: '' };
+    },
+    [onSessionInvalid],
+  );
 
   const bootstrap = useCallback(async () => {
+    if (patientsMode.kind === 'forbidden') {
+      setPatients([]);
+      setSelectedPatientId('');
+      setEncounters([]);
+      setPatientsError('');
+      setEncountersError(patientsMode.message);
+      setIsBootstrapping(false);
+      return;
+    }
+
     try {
       setIsBootstrapping(true);
       setPatientsError('');
+      setEncountersError(patientsMode.kind === 'secretary-operational' ? clinicalDeniedMessage : '');
 
       const response = await listPatients();
       setPatients(response.items);
     } catch (error) {
-      setPatientsError(getErrorMessage(error, 'No se pudieron cargar los pacientes activos.'));
+      const nextError = resolveViewError(
+        error,
+        'No se pudieron cargar los pacientes activos.',
+        'No tenés permiso para consultar pacientes.',
+      );
+      setPatientsError(nextError.errorMessage);
+      setEncountersError(nextError.deniedMessage);
     } finally {
       setIsBootstrapping(false);
     }
-  }, []);
+  }, [clinicalDeniedMessage, patientsMode, resolveViewError]);
 
-  const loadEncounters = useCallback(async (patientId: string) => {
-    try {
-      setIsLoadingEncounters(true);
-      setEncountersError('');
+  const loadEncounters = useCallback(
+    async (patientId: string) => {
+      if (!canAccessClinical) {
+        setEncounters([]);
+        setEncountersError(clinicalDeniedMessage);
+        return;
+      }
 
-      const response = await listPatientEncounters(patientId);
-      setEncounters(sortEncounters(response.items));
-    } catch (error) {
-      setEncounters([]);
-      setEncountersError(getErrorMessage(error, 'No se pudieron cargar las evoluciones del paciente.'));
-    } finally {
-      setIsLoadingEncounters(false);
-    }
-  }, []);
+      try {
+        setIsLoadingEncounters(true);
+        setEncountersError('');
+
+        const response = await listPatientEncounters(patientId);
+        setEncounters(sortEncounters(response.items));
+      } catch (error) {
+        setEncounters([]);
+        const nextError = resolveViewError(
+          error,
+          'No se pudieron cargar las evoluciones del paciente.',
+          'No tenés permiso para consultar encounters clínicos.',
+        );
+        setEncountersError(nextError.deniedMessage || nextError.errorMessage);
+      } finally {
+        setIsLoadingEncounters(false);
+      }
+    },
+    [canAccessClinical, clinicalDeniedMessage, resolveViewError],
+  );
 
   useEffect(() => {
     void bootstrap();
@@ -83,18 +138,27 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
     setSuccessMessage('');
     setFormError('');
 
-    if (!selectedPatientId || !canAccessClinical) {
+    if (!selectedPatientId) {
       setEncounters([]);
-      setEncountersError(
-        canAccessClinical ? '' : 'Tu usuario doctor no tiene professional_id, así que no puede abrir ni registrar encounters.',
-      );
+      setEncountersError(canAccessClinical ? '' : clinicalDeniedMessage);
+      return;
+    }
+
+    if (!canAccessClinical) {
+      setEncounters([]);
+      setEncountersError(clinicalDeniedMessage);
       return;
     }
 
     void loadEncounters(selectedPatientId);
-  }, [canAccessClinical, loadEncounters, selectedPatientId]);
+  }, [canAccessClinical, clinicalDeniedMessage, loadEncounters, selectedPatientId]);
 
   async function handleCreateEncounter() {
+    if (!canAccessClinical) {
+      setFormError(clinicalDeniedMessage);
+      return;
+    }
+
     if (!selectedPatientId) {
       setFormError('Elegí un paciente antes de registrar una nota.');
       return;
@@ -129,27 +193,45 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
       setForm(EMPTY_ENCOUNTER_FORM);
       setSuccessMessage('Nota inicial registrada correctamente.');
     } catch (error) {
-      setFormError(getErrorMessage(error, 'No se pudo registrar la nota clínica.'));
+      const nextError = resolveViewError(
+        error,
+        'No se pudo registrar la nota clínica.',
+        'No tenés permiso para registrar encounters clínicos.',
+      );
+      setFormError(nextError.deniedMessage || nextError.errorMessage);
     } finally {
       setIsCreatingEncounter(false);
     }
   }
 
+  if (patientsMode.kind === 'forbidden') {
+    return (
+      <section className="card stack" aria-live="polite">
+        <div className="hero-kicker">Pacientes bloqueado</div>
+        <h2>Acceso denegado</h2>
+        <p>{patientsMode.message}</p>
+      </section>
+    );
+  }
+
   return (
     <div className="stack">
       <header className="hero section-hero section-hero-card card">
-        <div className="hero-kicker">Doctor workspace · alcance mínimo</div>
-        <h2>Pacientes activos y nota inicial</h2>
+        <div className="hero-kicker">
+          {patientsMode.kind === 'doctor-clinical' ? 'Doctor workspace · alcance mínimo' : 'Pacientes operativos · secretaría'}
+        </div>
+        <h2>{patientsMode.kind === 'doctor-clinical' ? 'Pacientes activos y nota inicial' : 'Pacientes activos para agenda y administración'}</h2>
         <p>
-          Esta superficie reemplaza el placeholder y deja un flujo demo-friendly: elegir paciente, ver resumen,
-          revisar encounters y registrar una evolución corta sin inventar una historia clínica completa.
+          {patientsMode.kind === 'doctor-clinical'
+            ? 'Elegir paciente, ver encounters y registrar una evolución corta sin inventar una historia clínica completa.'
+            : 'Buscar y seleccionar pacientes para tareas operativas sin habilitar trabajo clínico ni encounters.'}
         </p>
 
         <div className="status-bar">
           <span className="badge neutral">Pacientes activos: {activePatients.length}</span>
           <span className="badge neutral">Encounters visibles: {encounters.length}</span>
-          <span className={`badge ${canAccessClinical ? 'info' : 'error'}`}>
-            {canAccessClinical ? 'Bearer listo para endpoints clínicos' : 'Falta professional_id en la sesión'}
+          <span className={`badge ${canAccessClinical ? 'info' : 'neutral'}`}>
+            {canAccessClinical ? 'Modo clínico habilitado' : 'Modo operativo sin clinical encounters'}
           </span>
           {successMessage ? <span className="badge success">{successMessage}</span> : null}
           {patientsError ? <span className="badge error">{patientsError}</span> : null}
@@ -161,7 +243,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
           <div className="section-header">
             <div>
               <h3>Pacientes activos</h3>
-              <p>Lista corta para entrar rápido a una atención sin meter navegación extra.</p>
+              <p>Lista corta para entrar rápido a una atención o resolver la agenda sin meter navegación extra.</p>
             </div>
             <button className="button secondary" type="button" onClick={() => void bootstrap()} disabled={isBootstrapping}>
               {isBootstrapping ? 'Actualizando...' : 'Actualizar'}
@@ -173,7 +255,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
           ) : activePatients.length === 0 ? (
             <div className="empty-state">
               <strong>No hay pacientes activos</strong>
-              <span>Cargalos desde Directorio para que esta vista doctor tenga casos reales de demo.</span>
+              <span>Cargalos desde Directorio para que esta vista tenga casos reales de demo.</span>
             </div>
           ) : (
             <div className="list compact-list patient-selector-list">
@@ -205,7 +287,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
             <div className="section-header">
               <div>
                 <h3>Resumen del paciente</h3>
-                <p>Ficha básica para contexto rápido antes de mirar o escribir una evolución.</p>
+                <p>Ficha básica para contexto rápido antes de una tarea clínica u operativa.</p>
               </div>
               {selectedPatient ? <span className="pill">Activo</span> : null}
             </div>
@@ -213,7 +295,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
             {!selectedPatient ? (
               <div className="empty-state">
                 <strong>Seleccioná un paciente</strong>
-                <span>Cuando elijas uno, vas a ver su resumen y las notas iniciales disponibles para tu usuario doctor.</span>
+                <span>Cuando elijas uno, vas a ver su resumen y el alcance habilitado para este actor.</span>
               </div>
             ) : (
               <>
@@ -236,15 +318,20 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
                     <small>{selectedPatient.email || 'Sin email cargado'}</small>
                   </article>
                   <article className="overview-card">
-                    <span className="summary-label">Profesional actual</span>
-                    <strong>{currentUser.email}</strong>
-                    <small>{currentUser.professional_id ? `professional_id ${currentUser.professional_id}` : 'Sin vínculo profesional'}</small>
+                    <span className="summary-label">Modo</span>
+                    <strong>{canAccessClinical ? 'Clínico' : 'Operativo'}</strong>
+                    <small>
+                      {canAccessClinical
+                        ? `professional_id ${patientsMode.professionalId}`
+                        : 'Sin lectura ni escritura de encounters clínicos'}
+                    </small>
                   </article>
                 </div>
 
                 <div className="inline-note">
-                  Este alcance es INTENCIONALMENTE chico: solo encounters con nota inicial. Nada de timeline clínica completa,
-                  recetas ni estudios todavía.
+                  {canAccessClinical
+                    ? 'Este alcance es INTENCIONALMENTE chico: solo encounters con nota inicial. Nada de timeline clínica completa, recetas ni estudios todavía.'
+                    : 'Secretaría puede seleccionar y verificar datos del paciente, pero NO abrir trabajo clínico ni registrar evoluciones.'}
                 </div>
               </>
             )}
@@ -254,7 +341,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
             <div className="section-header">
               <div>
                 <h3>Encounters</h3>
-                <p>Listado descendente por fecha para ver la actividad mínima del paciente seleccionado.</p>
+                <p>Listado descendente por fecha para ver la actividad clínica cuando el actor lo tiene habilitado.</p>
               </div>
               <button
                 className="button secondary"
@@ -269,7 +356,12 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
             {encountersError ? <div className="inline-note inline-note-error">{encountersError}</div> : null}
 
             {!selectedPatient ? (
-              <div className="empty-state empty-state-soft">Elegí un paciente para ver sus encounters.</div>
+              <div className="empty-state empty-state-soft">Elegí un paciente para ver su alcance disponible.</div>
+            ) : !canAccessClinical ? (
+              <div className="empty-state">
+                <strong>Encounters clínicos bloqueados</strong>
+                <span>{clinicalDeniedMessage}</span>
+              </div>
             ) : isLoadingEncounters ? (
               <div className="empty-state empty-state-soft">Cargando encounters...</div>
             ) : encounters.length === 0 ? (
@@ -303,7 +395,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
             <div className="section-header">
               <div>
                 <h3>Nueva nota / evolución</h3>
-                <p>Formulario corto para registrar una observación inicial y mantener la demo enfocada.</p>
+                <p>Formulario corto para registrar una observación inicial solo cuando el actor tiene alcance clínico.</p>
               </div>
             </div>
 
@@ -315,6 +407,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
                   type="datetime-local"
                   value={form.occurred_at}
                   onChange={(event) => setForm((current) => ({ ...current, occurred_at: event.target.value }))}
+                  disabled={!canAccessClinical}
                 />
               </div>
 
@@ -325,6 +418,7 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
                   value={form.note}
                   onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
                   placeholder="Ej: Paciente compensado, tolera medicación, se indican controles en 72 h."
+                  disabled={!canAccessClinical}
                 />
               </div>
             </div>
@@ -340,7 +434,9 @@ export function PatientsWorkspace({ currentUser }: PatientsWorkspaceProps) {
               >
                 {isCreatingEncounter ? 'Guardando...' : 'Guardar nota'}
               </button>
-              <span className="helper helper-inline">Sin router, sin wizard, sin historia clínica completa.</span>
+              <span className="helper helper-inline">
+                {canAccessClinical ? 'Sin router, sin wizard, sin historia clínica completa.' : 'Modo operativo: sin escritura clínica.'}
+              </span>
             </div>
           </section>
         </div>
@@ -380,20 +476,4 @@ function formatDateTime(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
-}
-
-function getErrorMessage(error: unknown, fallbackMessage: string) {
-  if (error instanceof ApiError) {
-    if (error.status === 401) {
-      return 'La sesión no llegó al backend clínico. Volvé a iniciar sesión.';
-    }
-
-    if (error.status === 403) {
-      return 'Este usuario no tiene perfil profesional para operar encounters.';
-    }
-
-    return error.message;
-  }
-
-  return fallbackMessage;
 }

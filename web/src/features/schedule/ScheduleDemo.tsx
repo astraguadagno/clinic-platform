@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelAppointment, createAppointment, createSlotsBulk, listAppointments, listSlots } from '../../api/appointments';
 import { listPatients, listProfessionals } from '../../api/directory';
-import { ApiError } from '../../api/http';
-import type { AuthUser } from '../../types/auth';
+import { type AgendaMode } from '../../auth/actorCapabilities';
+import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import type { Appointment, BulkCreateSlotsPayload, Slot } from '../../types/appointments';
 import type { Patient, Professional } from '../../types/directory';
 import { formatDateInputValue, formatDateTimeRange, formatLongDate } from './helpers';
 
 type ScheduleDemoProps = {
-  currentUser: AuthUser;
+  agendaMode: AgendaMode;
   onSessionInvalid: () => void;
 };
 
-export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProps) {
+export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps) {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedProfessionalId, setSelectedProfessionalId] = useState('');
@@ -42,46 +42,21 @@ export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProp
     setReleasedSlotLabel('');
   }, []);
 
-  const actorMode = useMemo(() => {
-    if (currentUser.role === 'doctor') {
-      const professionalId = currentUser.professional_id?.trim() ?? '';
-
-      if (!professionalId) {
-        return { kind: 'forbidden' as const, message: 'Tu usuario doctor no tiene professional_id asociado.' };
-      }
-
-      return { kind: 'doctor' as const, professionalId };
-    }
-
-    if (currentUser.role === 'admin' || currentUser.role === 'secretary') {
-      return { kind: 'shared' as const };
-    }
-
-    return { kind: 'forbidden' as const, message: 'Tu rol no tiene acceso a la agenda.' };
-  }, [currentUser.professional_id, currentUser.role]);
-
-  const isDoctorAgenda = actorMode.kind === 'doctor';
+  const isDoctorAgenda = agendaMode.kind === 'doctor-own';
 
   const handleApiFailure = useCallback(
     (error: unknown, fallbackMessage: string) => {
-      if (error instanceof ApiError) {
-        if (error.status === 401) {
-          onSessionInvalid();
-          return { errorMessage: '', accessDeniedMessage: '' };
-        }
+      const resolution = resolveAuthenticatedViewError(error, onSessionInvalid, fallbackMessage, 'No podés operar esta agenda.');
 
-        if (error.status === 403) {
-          return { errorMessage: '', accessDeniedMessage: error.message || 'Acceso denegado.' };
-        }
-
-        return { errorMessage: error.message, accessDeniedMessage: '' };
+      if (resolution.kind === 'session-invalid') {
+        return { errorMessage: '', accessDeniedMessage: '' };
       }
 
-      if (error instanceof Error) {
-        return { errorMessage: error.message, accessDeniedMessage: '' };
+      if (resolution.kind === 'forbidden') {
+        return { errorMessage: '', accessDeniedMessage: resolution.message };
       }
 
-      return { errorMessage: fallbackMessage, accessDeniedMessage: '' };
+      return { errorMessage: resolution.message, accessDeniedMessage: '' };
     },
     [onSessionInvalid],
   );
@@ -117,12 +92,12 @@ export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProp
   );
 
   const bootstrap = useCallback(async () => {
-    if (actorMode.kind === 'forbidden') {
+    if (agendaMode.kind === 'forbidden') {
       setProfessionals([]);
       setPatients([]);
       setSelectedProfessionalId('');
       setSelectedPatientId('');
-      setAccessDeniedMessage(actorMode.message);
+      setAccessDeniedMessage(agendaMode.message);
       setIsBootstrapping(false);
       return;
     }
@@ -140,8 +115,8 @@ export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProp
       setProfessionals(nextProfessionals);
       setPatients(nextPatients);
       setSelectedProfessionalId((current) => {
-        if (actorMode.kind === 'doctor') {
-          return actorMode.professionalId;
+        if (agendaMode.kind === 'doctor-own') {
+          return agendaMode.professionalId;
         }
 
 	      return nextProfessionals.some((professional) => professional.id === current) ? current : nextProfessionals[0]?.id || '';
@@ -156,15 +131,15 @@ export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProp
     } finally {
       setIsBootstrapping(false);
     }
-  }, [actorMode, handleApiFailure]);
+  }, [agendaMode, handleApiFailure]);
 
   const refreshAgenda = useCallback(async () => {
-	  if (actorMode.kind === 'forbidden') {
-		setDaySlots([]);
-		setAppointments([]);
-		setSelectedSlotId('');
-		return;
-	  }
+    if (agendaMode.kind === 'forbidden') {
+      setDaySlots([]);
+      setAppointments([]);
+      setSelectedSlotId('');
+      return;
+    }
 
     if (!selectedProfessionalId || !selectedDate) {
       setDaySlots([]);
@@ -204,7 +179,7 @@ export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProp
     } finally {
       setIsRefreshingAgenda(false);
     }
-  }, [actorMode.kind, handleApiFailure, selectedDate, selectedProfessionalId]);
+  }, [agendaMode.kind, handleApiFailure, selectedDate, selectedProfessionalId]);
 
   useEffect(() => {
     if (isBootstrapping) {
@@ -319,12 +294,12 @@ export function ScheduleDemo({ currentUser, onSessionInvalid }: ScheduleDemoProp
     }
   }
 
-  if (actorMode.kind === 'forbidden') {
+  if (agendaMode.kind === 'forbidden') {
     return (
       <section className="card stack schedule-demo" aria-live="polite">
         <div className="hero-kicker">Agenda bloqueada</div>
         <h1>Acceso denegado</h1>
-        <p>{actorMode.message}</p>
+        <p>{agendaMode.message}</p>
       </section>
     );
   }
@@ -713,16 +688,4 @@ function compareAppointmentsBySlot(slots: Slot[]) {
 
     return leftOrder - rightOrder;
   };
-}
-
-function getErrorMessage(error: unknown, fallbackMessage: string) {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallbackMessage;
 }
