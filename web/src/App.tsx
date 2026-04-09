@@ -43,9 +43,9 @@ export default function App() {
       <main className="page page-centered">
         <div className="shell auth-shell">
           <section className="card stack">
-            <div className="hero-kicker">Autenticación</div>
-            <h1>Restaurando sesión...</h1>
-            <p>Estamos validando el token guardado con el backend nuevo.</p>
+            <div className="hero-kicker">Acceso</div>
+            <h1>Recuperando tu sesión...</h1>
+            <p>Estamos validando tus credenciales para abrir el espacio de trabajo.</p>
           </section>
         </div>
       </main>
@@ -60,47 +60,47 @@ export default function App() {
     <main className="page">
       <div className="shell app-shell stack">
         <header className="hero hero-product card">
-          <div className="hero-kicker">Demo frontend · sesión activa</div>
+          <div className="hero-kicker">Clinic Platform · sesión activa</div>
           <div className="hero-copy stack-tight">
-            <h1>Clinic platform demos</h1>
+            <h1>Panel de trabajo de la clínica</h1>
             <p>
-              Sprint 1 V2 con login mínimo, sesión simple en frontend y superficies filtradas por rol sin meter
-              complejidad extra.
+              Entrá con tu perfil y seguí la operación diaria desde los espacios habilitados para ese rol, sin cambiar
+              el flujo actual.
             </p>
           </div>
 
           <div className="hero-summary-grid">
             <article className="summary-tile">
-              <span className="summary-label">Superficie activa</span>
+              <span className="summary-label">Espacio actual</span>
               <strong>{activeSurfaceDefinition?.label ?? 'Agenda'}</strong>
               <small>{activeSurfaceDefinition?.description ?? 'Cada vista conserva su propio foco.'}</small>
             </article>
             <article className="summary-tile">
-              <span className="summary-label">Sesión</span>
+              <span className="summary-label">Cuenta</span>
               <strong>{auth.user.email}</strong>
-              <small>Rol: {auth.user.role}</small>
+              <small>Perfil: {auth.user.role}</small>
             </article>
           </div>
 
           <div className="toolbar shell-toolbar">
             <span className="badge neutral">Expira: {formatSessionExpiry(auth.expiresAt)}</span>
-            {auth.user.role === 'admin' ? <span className="badge info">Admin: foco en setup y configuración</span> : null}
+            {auth.user.role === 'admin' ? <span className="badge info">Admin: mantenimiento y configuración base</span> : null}
             <button className="button button-secondary" type="button" onClick={auth.logout}>
               Cerrar sesión
             </button>
           </div>
         </header>
 
-        <section className="surface-switcher card stack-tight" aria-label="Selector de demo">
+        <section className="surface-switcher card stack-tight" aria-label="Selector de espacios">
           <div className="surface-switcher-header">
             <div>
-              <h2>Elegí la superficie</h2>
-              <p>Mostramos solo lo mínimo para el rol autenticado, sin router ni shell gigante.</p>
+              <h2>Tu espacio de trabajo</h2>
+              <p>Mostramos solamente las áreas disponibles para este perfil, con el mismo acceso y permisos de hoy.</p>
             </div>
-            <span className="badge neutral">{availableSurfaces.length} superficie(s) habilitada(s)</span>
+            <span className="badge neutral">{availableSurfaces.length} área(s) habilitada(s)</span>
           </div>
 
-          <div className="surface-tabs" role="tablist" aria-label="Superficies demo">
+          <div className="surface-tabs" role="tablist" aria-label="Áreas disponibles">
             {availableSurfaces.map((surface) => (
               <button
                 key={surface.id}
@@ -135,8 +135,8 @@ export default function App() {
 function getSurfaceDefinition(surfaceId: SurfaceId, capabilities: NonNullable<ReturnType<typeof deriveActorCapabilities>>): SurfaceDefinition {
   if (surfaceId === 'agenda') {
     return capabilities.agendaMode.kind === 'doctor-own'
-      ? { id: 'agenda', label: 'Mi agenda', eyebrow: 'Atención diaria', description: 'Vista enfocada en tu agenda profesional.' }
-      : { id: 'agenda', label: 'Agenda', eyebrow: 'Operación diaria', description: 'Turnos, slots y gestión operativa.' };
+      ? { id: 'agenda', label: 'Mi agenda', eyebrow: 'Atención del día', description: 'Tus turnos y disponibilidad de hoy.' }
+      : { id: 'agenda', label: 'Agenda', eyebrow: 'Gestión diaria', description: 'Turnos, disponibilidad y cambios del día.' };
   }
 
   if (surfaceId === 'patients') {
@@ -144,22 +144,22 @@ function getSurfaceDefinition(surfaceId: SurfaceId, capabilities: NonNullable<Re
       ? {
           id: 'patients',
           label: 'Pacientes',
-          eyebrow: 'Flujo operativo',
-          description: 'Búsqueda y selección para tareas administrativas y agenda.',
+          eyebrow: 'Admisión',
+          description: 'Búsqueda y selección para tareas administrativas.',
         }
       : {
           id: 'patients',
           label: 'Pacientes',
-          eyebrow: 'Atención clínica',
-          description: 'Resumen clínico mínimo y encounters del paciente.',
+          eyebrow: 'Seguimiento',
+          description: 'Resumen clínico y encounters del paciente.',
         };
   }
 
   return {
     id: 'directory',
     label: 'Directorio',
-    eyebrow: 'Setup base',
-    description: 'Alta base de pacientes y profesionales.',
+    eyebrow: 'Base clínica',
+    description: 'Pacientes y profesionales para operar la clínica.',
   };
 }
 

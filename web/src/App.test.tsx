@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
@@ -36,8 +36,9 @@ describe('App actor-aware shell', () => {
 
     render(<App />);
 
+    expect(screen.getByRole('heading', { name: 'Panel de trabajo de la clínica' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(
-      expect.arrayContaining(['Atención diariaMi agendaVista enfocada en tu agenda profesional.', 'Atención clínicaPacientesResumen clínico mínimo y encounters del paciente.']),
+      expect.arrayContaining(['Atención del díaMi agendaTus turnos y disponibilidad de hoy.', 'SeguimientoPacientesResumen clínico y encounters del paciente.']),
     );
     expect(screen.getAllByRole('tab')).toHaveLength(2);
     expect(screen.getByText('schedule:doctor-own')).toBeInTheDocument();
@@ -49,7 +50,7 @@ describe('App actor-aware shell', () => {
     render(<App />);
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(
-      expect.arrayContaining(['Operación diariaAgendaTurnos, slots y gestión operativa.', 'Flujo operativoPacientesBúsqueda y selección para tareas administrativas y agenda.']),
+      expect.arrayContaining(['Gestión diariaAgendaTurnos, disponibilidad y cambios del día.', 'AdmisiónPacientesBúsqueda y selección para tareas administrativas.']),
     );
     expect(screen.getAllByRole('tab')).toHaveLength(2);
     expect(screen.getByText('schedule:operational-shared')).toBeInTheDocument();
@@ -79,8 +80,21 @@ describe('App actor-aware shell', () => {
     render(<App />);
 
     expect(screen.getAllByRole('tab')).toHaveLength(1);
-    expect(screen.getAllByRole('tab')[0]?.textContent).toBe('Setup baseDirectorioAlta base de pacientes y profesionales.');
+    expect(screen.getAllByRole('tab')[0]?.textContent).toBe('Base clínicaDirectorioPacientes y profesionales para operar la clínica.');
     expect(screen.getByText('directory:setup-shared')).toBeInTheDocument();
+  });
+
+  it('keeps authenticated shell navigation unchanged under the polished copy', () => {
+    useAuthSessionMock.mockReturnValue(authSession({ role: 'secretary' }));
+
+    render(<App />);
+
+    expect(screen.getByText('schedule:operational-shared')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Pacientes/i }));
+
+    expect(screen.getByText('patients:secretary-operational')).toBeInTheDocument();
+    expect(screen.queryByText('schedule:operational-shared')).not.toBeInTheDocument();
   });
 });
 

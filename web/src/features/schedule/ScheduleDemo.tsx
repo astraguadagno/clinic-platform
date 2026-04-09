@@ -66,6 +66,11 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
     [professionals, selectedProfessionalId],
   );
 
+  const selectedPatient = useMemo(
+    () => patients.find((patient) => patient.id === selectedPatientId) ?? null,
+    [patients, selectedPatientId],
+  );
+
   const availableSlots = useMemo(
     () => daySlots.filter((slot) => slot.status === 'available').sort(compareByStartTime),
     [daySlots],
@@ -75,6 +80,8 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
     () => new Map(daySlots.map((slot) => [slot.id, slot])),
     [daySlots],
   );
+
+  const selectedSlot = useMemo(() => slotById.get(selectedSlotId) ?? null, [selectedSlotId, slotById]);
 
   const patientNameById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, `${patient.first_name} ${patient.last_name}`])),
@@ -308,12 +315,12 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
     <div className="stack schedule-demo">
       <header className="card schedule-hero">
         <div className="schedule-hero-copy stack">
-          <div className="hero-kicker">Operación diaria demo</div>
+          <div className="hero-kicker">Agenda diaria</div>
           <div className="stack-tight">
-            <h1>Agenda demo</h1>
+            <h1>Agenda de turnos</h1>
             <p>
-              Una vista un poco más destacada, pero alineada con el resto de la app: elegir profesional, generar
-              disponibilidad, reservar turnos y cancelar sobre los endpoints actuales.
+              Elegí la fecha y el profesional, revisá la disponibilidad generada y reservá o cancelá con el flujo que
+              ya existe hoy.
             </p>
           </div>
 
@@ -334,22 +341,22 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
         </div>
 
         <div className="schedule-hero-panel">
-          <div className="schedule-hero-panel-head">
+            <div className="schedule-hero-panel-head">
             <span className="summary-label">Agenda seleccionada</span>
             <strong>{selectedProfessional ? `${selectedProfessional.first_name} ${selectedProfessional.last_name}` : 'Sin profesional'}</strong>
-            <small>{selectedProfessional?.specialty ?? 'Elegí un profesional para operar la agenda.'}</small>
+            <small>{selectedProfessional?.specialty ?? 'Elegí un profesional para revisar la agenda.'}</small>
           </div>
 
           <div className="schedule-stat-grid">
             <article className="schedule-stat-card">
               <span className="summary-label">Fecha</span>
               <strong>{formatLongDate(selectedDate)}</strong>
-              <small>Filtrado real por día.</small>
+              <small>Vista filtrada por día.</small>
             </article>
             <article className="schedule-stat-card">
               <span className="summary-label">Disponibles</span>
               <strong>{availableSlots.length}</strong>
-              <small>{availableSlots.length > 0 ? 'Listos para reservar.' : 'Todavía sin carga.'}</small>
+              <small>{availableSlots.length > 0 ? 'Listos para seleccionar.' : 'Todavía sin disponibilidad.'}</small>
             </article>
             <article className="schedule-stat-card">
               <span className="summary-label">Reservados</span>
@@ -371,7 +378,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             <div>
               <span className="summary-label">Contexto</span>
               <h2>Filtros de agenda</h2>
-              <p className="helper">La demo sigue el backend real: profesional, fecha, slots y turnos del día.</p>
+              <p className="helper">Paso 1: elegí profesional y fecha para cargar la disponibilidad del día.</p>
             </div>
 
             <div className="field">
@@ -412,7 +419,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
                   setSelectedDate(event.target.value);
                 }}
               />
-              <small className="helper">La fecha se interpreta en UTC, igual que slots y appointments del backend.</small>
+              <small className="helper">La fecha se interpreta en UTC, igual que la disponibilidad del backend.</small>
             </div>
 
             <button
@@ -424,7 +431,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
               }}
               disabled={isBootstrapping || isRefreshingAgenda}
             >
-              {isRefreshingAgenda ? 'Actualizando...' : 'Refrescar agenda'}
+              {isRefreshingAgenda ? 'Actualizando...' : 'Actualizar agenda'}
             </button>
           </section>
 
@@ -432,7 +439,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             <div className="stack-tight">
               <span className="summary-label schedule-dark-eyebrow">Automatización</span>
               <h2 id="generate-slots-title">Generar slots</h2>
-              <p className="helper">Creá disponibilidad real sobre el profesional y la fecha elegidos.</p>
+              <p className="helper">Paso 2 opcional: cargá disponibilidad para esa agenda sin salir de esta vista.</p>
             </div>
 
             <div className="time-grid">
@@ -489,7 +496,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             <div>
               <span className="summary-label">Reserva</span>
               <h2>Reservar turno</h2>
-              <p className="helper">Seleccioná paciente y uno de los slots realmente disponibles.</p>
+              <p className="helper">Paso 3: elegí un horario desde la grilla principal y asignalo a un paciente.</p>
             </div>
 
             <div className="field">
@@ -509,21 +516,13 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
               </select>
             </div>
 
-            <div className="field">
-              <label htmlFor="slot">Slot a reservar</label>
-              <select
-                id="slot"
-                value={selectedSlotId}
-                onChange={(event) => setSelectedSlotId(event.target.value)}
-                disabled={availableSlots.length === 0 || isRefreshingAgenda}
-              >
-                {availableSlots.length === 0 ? <option value="">No hay slots disponibles</option> : null}
-                {availableSlots.map((slot) => (
-                  <option key={slot.id} value={slot.id}>
-                    {formatDateTimeRange(slot.start_time, slot.end_time)}
-                  </option>
-                ))}
-              </select>
+            <div className="inline-note" aria-live="polite">
+              <strong>{selectedSlot ? formatDateTimeRange(selectedSlot.start_time, selectedSlot.end_time) : 'Todavía sin horario seleccionado'}</strong>
+              <span>
+                {selectedSlot
+                  ? `Paciente listo para reservar: ${selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name}` : 'seleccioná un paciente'}.`
+                  : 'Seleccioná un horario desde la grilla de disponibilidad para continuar.'}
+              </span>
             </div>
 
             <button
@@ -536,8 +535,8 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             </button>
 
             <div className="inline-note">
-              <strong>Tip demo:</strong> si cargás un paciente o profesional en Directorio, al volver a Agenda se refresca la
-              base disponible sin recargar toda la app.
+              <strong>Nota:</strong> si cargás un paciente o profesional en Directorio, al volver a Agenda se refresca la base
+              disponible sin recargar toda la app.
             </div>
           </section>
         </aside>
@@ -561,7 +560,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             ) : availableSlots.length === 0 ? (
               <div className="empty-state">
                 <strong>Sin slots disponibles</strong>
-                <span>Probá generar disponibilidad rápida desde el panel izquierdo para esta fecha.</span>
+                <span>Generá disponibilidad o cambiá la fecha para mostrar horarios reservables.</span>
               </div>
             ) : (
                 <>
@@ -581,6 +580,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
                         <button
                           key={slot.id}
                           type="button"
+                          aria-pressed={isSelected}
                           className={`slot-button${isSelected ? ' selected' : ''}${isRecentlyReleased ? ' released' : ''}`}
                           onClick={() => {
                             setSelectedSlotId(slot.id);
@@ -591,9 +591,9 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
                             }
                           }}
                         >
-                          <span className="slot-card-kicker">Slot disponible</span>
+                          <span className="slot-card-kicker">Horario disponible</span>
                           <strong>{formatDateTimeRange(slot.start_time, slot.end_time)}</strong>
-                          <span className="slot-note">{isRecentlyReleased ? 'Liberado recién' : 'Listo para reservar'}</span>
+                          <span className="slot-note">{isRecentlyReleased ? 'Se liberó recién' : 'Seleccioná este horario'}</span>
                         </button>
                       );
                     })}
@@ -606,7 +606,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             <div className="section-header">
               <div>
                 <h2>Turnos del día</h2>
-                <p>Listado simple con cancelación inmediata y estados fáciles de leer.</p>
+                <p>Listado simple con paciente, horario y estado listo para operar.</p>
               </div>
               <span className="badge neutral">{appointments.length} total</span>
             </div>
@@ -635,13 +635,16 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
                           <div className="stack-tight">
                             <strong>{patientName}</strong>
                             <small>{slot ? formatDateTimeRange(slot.start_time, slot.end_time) : 'Horario no disponible'}</small>
+                            {selectedProfessional ? (
+                              <small>
+                                {selectedProfessional.first_name} {selectedProfessional.last_name} · {formatLongDate(selectedDate)}
+                              </small>
+                            ) : null}
                           </div>
                         </div>
 
                         <div className="appointment-meta">
                           <span className={`pill${isCancelled ? ' cancelled' : ''}`}>{isCancelled ? 'Cancelado' : 'Reservado'}</span>
-                          <span className="muted">Appointment: {appointment.id}</span>
-                          <span className="muted">Slot: {appointment.slot_id}</span>
                         </div>
 
                         <div className="appointment-actions">
