@@ -75,7 +75,8 @@ button {
   margin: 0 auto;
 }
 
-.app-shell {
+.app-shell,
+.app-shell-frame {
   gap: 20px;
 }
 
@@ -163,15 +164,59 @@ button {
 }
 
 .hero-product,
-.section-hero-card {
+.section-hero-card,
+.app-shell-header,
+.app-shell-surface-frame {
   gap: 18px;
 }
 
 .hero-product h1,
+.app-shell-header h1,
 .section-hero-card h1,
+.app-shell-surface-frame h2,
 .section-hero-card h2 {
   font-size: clamp(1.95rem, 3vw, 2.65rem);
   line-height: 1.08;
+}
+
+.app-shell-header-main,
+.app-shell-surface-intro,
+.app-shell-surface-content {
+  display: grid;
+  gap: 18px;
+}
+
+.app-shell-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(237, 244, 255, 0.92) 100%);
+}
+
+.app-shell-nav {
+  gap: 16px;
+}
+
+.app-shell-nav-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.app-shell-nav-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+}
+
+.app-shell-nav-header p,
+.app-shell-surface-intro p {
+  margin: 0;
+}
+
+.app-shell-surface-frame {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.app-shell-surface-content {
+  gap: 20px;
 }
 
 .hero-copy {
@@ -376,13 +421,35 @@ button {
   gap: 18px;
 }
 
+.schedule-demo {
+  --schedule-ink: #2b1718;
+  --schedule-soft-text: #6a5657;
+  --schedule-burgundy: #570000;
+  --schedule-burgundy-soft: #f7ecec;
+  --schedule-gold: #735c00;
+  --schedule-gold-soft: #fff7dd;
+  --schedule-surface: #fcf8f5;
+  --schedule-surface-strong: #f4eeea;
+  --schedule-ghost-border: rgba(87, 0, 0, 0.12);
+}
+
+.schedule-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 24px;
+  align-items: start;
+}
+
 .schedule-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.95fr);
-  gap: 20px;
-  padding: 28px;
-  border-color: #d7e3ef;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 248, 252, 0.96) 100%);
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.95fr);
+  gap: 24px;
+  padding: 32px;
+  border-color: var(--schedule-ghost-border);
+  background:
+    radial-gradient(circle at top right, rgba(254, 214, 91, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(255, 251, 247, 0.98) 0%, rgba(247, 239, 235, 0.96) 100%);
+  box-shadow: 0 18px 38px rgba(43, 23, 24, 0.06);
 }
 
 .schedule-hero-copy {
@@ -391,6 +458,7 @@ button {
 
 .schedule-hero-copy p {
   max-width: 60ch;
+  color: var(--schedule-soft-text);
 }
 
 .schedule-hero-badges {
@@ -401,10 +469,11 @@ button {
   display: grid;
   gap: 16px;
   align-content: start;
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  border: 1px solid #dde6f0;
-  background: #f8fafc;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(87, 0, 0, 0.08);
+  background: rgba(255, 252, 250, 0.82);
+  backdrop-filter: blur(18px);
 }
 
 .schedule-hero-panel-head {
@@ -414,23 +483,60 @@ button {
 
 .schedule-hero-panel-head strong {
   font-size: 1.2rem;
+  color: var(--schedule-ink);
 }
 
 .schedule-stat-card {
   display: grid;
   gap: 4px;
   padding: 14px;
-  border: 1px solid #dbe5ee;
-  background: #ffffff;
+  border: 1px solid rgba(87, 0, 0, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(250, 245, 241, 0.92) 100%);
 }
 
 .schedule-stat-card strong {
   font-size: 1.02rem;
-  color: var(--text);
+  color: var(--schedule-ink);
 }
 
 .schedule-layout {
   align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+}
+
+.schedule-controls-card,
+.schedule-booking-card,
+.schedule-slots-card,
+.schedule-appointments-card,
+.schedule-generator-card {
+  border-color: rgba(87, 0, 0, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(249, 244, 240, 0.96) 100%);
+}
+
+.schedule-controls-head,
+.schedule-controls-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.schedule-controls-toolbar {
+  flex-wrap: wrap;
+}
+
+.schedule-filters-grid,
+.schedule-primary-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.schedule-filters-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+}
+
+.schedule-primary-grid {
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
 }
 
 .patients-workspace-grid {
@@ -501,16 +607,16 @@ button {
 }
 
 .schedule-generator-card {
-  border-color: #e6dccf;
-  background: linear-gradient(180deg, #fffdf9 0%, #fbf5ec 100%);
+  border-color: rgba(115, 92, 0, 0.14);
+  background: linear-gradient(180deg, rgba(255, 252, 245, 0.98) 0%, rgba(250, 242, 223, 0.96) 100%);
 }
 
 .schedule-generator-summary {
   display: grid;
   gap: 4px;
   padding: 14px 16px;
-  border: 1px solid #eadfce;
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(115, 92, 0, 0.12);
+  background: rgba(255, 252, 246, 0.92);
 }
 
 .schedule-generator-summary span {
@@ -526,7 +632,11 @@ button {
 }
 
 .schedule-generator-button {
-  background: #31261f;
+  background: linear-gradient(135deg, #705600 0%, #8b6b00 100%);
+}
+
+.schedule-generator-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #5e4800 0%, #735c00 100%);
 }
 
 .field {
@@ -654,16 +764,41 @@ button {
 }
 
 .slot-grid-feedback {
-  border: 1px solid #bbf7d0;
-  background: #f0fdf4;
+  border: 1px solid rgba(22, 101, 52, 0.14);
+  background: #f4fbf4;
   color: var(--success-text);
   margin-bottom: 14px;
 }
 
+.schedule-demo .button {
+  background: linear-gradient(135deg, #570000 0%, #800000 100%);
+  box-shadow: 0 8px 24px rgba(43, 23, 24, 0.08);
+}
+
+.schedule-demo .button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #480000 0%, #6d0000 100%);
+}
+
+.schedule-demo .button.secondary {
+  background: rgba(255, 252, 246, 0.9);
+  color: var(--schedule-ink);
+  border-color: rgba(115, 92, 0, 0.14);
+}
+
+.schedule-demo .button.secondary:hover:not(:disabled),
+.schedule-demo .button.ghost:hover:not(:disabled) {
+  background: rgba(255, 247, 221, 0.92);
+}
+
+.schedule-demo .button.ghost {
+  color: var(--schedule-ink);
+  border-color: rgba(87, 0, 0, 0.12);
+}
+
 .inline-note {
-  border: 1px solid #d7e6fb;
-  background: #f8fbff;
-  color: #26436f;
+  border: 1px solid rgba(87, 0, 0, 0.08);
+  background: var(--schedule-surface);
+  color: var(--schedule-ink);
 }
 
 .slot-button {
@@ -672,15 +807,15 @@ button {
   gap: 6px;
   min-height: 108px;
   padding: 16px;
-  border: 1px solid #dfe6ee;
-  background: #fff;
+  border: 1px solid rgba(87, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.92);
   text-align: left;
   box-shadow: none;
   transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
 }
 
 .slot-button:hover {
-  border-color: #cbd5e1;
+  border-color: rgba(87, 0, 0, 0.16);
   box-shadow: var(--shadow-soft);
 }
 
@@ -692,8 +827,8 @@ button {
 }
 
 .slot-button.selected {
-  border-color: #d6b18f;
-  background: #fff7ed;
+  border-color: rgba(115, 92, 0, 0.2);
+  background: var(--schedule-gold-soft);
 }
 
 .slot-button.released {
@@ -722,8 +857,8 @@ button {
   display: grid;
   gap: 10px;
   padding: 16px;
-  border: 1px solid #e3e9f4;
-  background: #fbfcfe;
+  border: 1px solid rgba(87, 0, 0, 0.06);
+  background: rgba(255, 252, 250, 0.95);
 }
 
 .schedule-appointments-list {
@@ -743,8 +878,8 @@ button {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: #e7eef8;
-  color: #26436f;
+  background: var(--schedule-burgundy-soft);
+  color: var(--schedule-burgundy);
   font-weight: 800;
 }
 
@@ -759,15 +894,19 @@ button {
   color: var(--success-text);
 }
 
+.schedule-booking-footnote {
+  color: var(--schedule-soft-text);
+}
+
 .pill.cancelled {
   background: var(--error-bg);
   color: var(--error-text);
 }
 
 .empty-state {
-  border: 1px dashed #d4deea;
-  background: var(--bg-surface-muted);
-  color: var(--text-soft);
+  border: 1px dashed rgba(87, 0, 0, 0.12);
+  background: var(--schedule-surface-strong);
+  color: var(--schedule-soft-text);
 }
 
 .empty-state strong {
@@ -785,7 +924,9 @@ button {
   .hero-summary-grid,
   .overview-grid,
   .surface-tabs,
-  .schedule-hero {
+  .schedule-hero,
+  .schedule-primary-grid,
+  .schedule-filters-grid {
     grid-template-columns: 1fr;
   }
 
@@ -809,7 +950,10 @@ button {
   }
 
   .surface-switcher-header,
-  .section-header {
+  .app-shell-nav-header,
+  .section-header,
+  .schedule-controls-head,
+  .schedule-controls-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
@@ -827,8 +971,11 @@ button {
   }
 
   .hero-product h1,
+  .app-shell-header h1,
   .section-hero-card h1,
+  .app-shell-surface-frame h2,
   .section-hero-card h2 {
     font-size: 1.8rem;
   }
+
 }

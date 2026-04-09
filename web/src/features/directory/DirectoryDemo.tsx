@@ -139,10 +139,7 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
 
   return (
     <div className="stack">
-      <header className="hero section-hero section-hero-card card">
-        <div className="hero-kicker">Setup base</div>
-        <h2>Directorio demo</h2>
-        <p>Alta rápida y listado claro para poblar la demo sin mezclar esta superficie con la operación diaria.</p>
+      <section className="card stack">
         <div className="status-bar">
           <span className="badge neutral">Pacientes: {patients.length}</span>
           <span className="badge neutral">Profesionales: {professionals.length}</span>
@@ -151,7 +148,8 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
           {errorMessage ? <span className="badge error">{errorMessage}</span> : null}
           {accessDeniedMessage ? <span className="badge error">Acceso denegado: {accessDeniedMessage}</span> : null}
         </div>
-      </header>
+        <div className="inline-note">Alta rápida y listados claros para poblar la demo sin mezclar esta superficie con la operación diaria.</div>
+      </section>
 
       <div className="directory-grid">
         <section className="card stack">

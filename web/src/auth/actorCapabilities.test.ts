@@ -1,15 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { deriveActorCapabilities } from './actorCapabilities';
+import { deriveActorCapabilities, resolveShellSurfaceMetadata } from './actorCapabilities';
 
 describe('deriveActorCapabilities', () => {
   it('keeps doctor focused on own agenda and patients', () => {
     const capabilities = deriveActorCapabilities(user({ role: 'doctor', professional_id: 'professional-1' }));
+    const agendaShell = resolveShellSurfaceMetadata('agenda', capabilities);
+    const patientsShell = resolveShellSurfaceMetadata('patients', capabilities);
 
     expect(capabilities.visibleSurfaces).toEqual(['agenda', 'patients']);
     expect(capabilities.defaultSurface).toBe('agenda');
     expect(capabilities.agendaMode).toEqual({ kind: 'doctor-own', professionalId: 'professional-1' });
     expect(capabilities.patientsMode).toEqual({ kind: 'doctor-clinical', professionalId: 'professional-1' });
     expect(capabilities.directoryMode.kind).toBe('forbidden');
+    expect(agendaShell.navItem).toEqual({
+      id: 'agenda',
+      label: 'Mi agenda',
+      eyebrow: 'Atención semanal',
+      description: 'Tus turnos y disponibilidad operativa de la semana.',
+    });
+    expect(patientsShell.intro).toEqual({
+      eyebrow: 'Seguimiento',
+      title: 'Pacientes',
+      description: 'Resumen clínico y encounters del paciente.',
+    });
   });
 
   it('blocks malformed doctor without professional association', () => {
@@ -28,22 +41,39 @@ describe('deriveActorCapabilities', () => {
 
   it('gives secretary operational agenda and patient access without admin symmetry', () => {
     const capabilities = deriveActorCapabilities(user({ role: 'secretary' }));
+    const agendaShell = resolveShellSurfaceMetadata('agenda', capabilities);
+    const patientsShell = resolveShellSurfaceMetadata('patients', capabilities);
+    const directoryShell = resolveShellSurfaceMetadata('directory', capabilities);
 
     expect(capabilities.visibleSurfaces).toEqual(['agenda', 'patients']);
     expect(capabilities.defaultSurface).toBe('agenda');
     expect(capabilities.agendaMode).toEqual({ kind: 'operational-shared' });
     expect(capabilities.patientsMode).toEqual({ kind: 'secretary-operational' });
     expect(capabilities.directoryMode).toEqual({ kind: 'setup-shared' });
+    expect(agendaShell.navItem.label).toBe('Agenda');
+    expect(patientsShell.intro).toEqual({
+      eyebrow: 'Admisión',
+      title: 'Pacientes',
+      description: 'Búsqueda y selección para tareas administrativas.',
+    });
+    expect(directoryShell.navItem).toEqual({
+      id: 'directory',
+      label: 'Directorio',
+      eyebrow: 'Base clínica',
+      description: 'Pacientes y profesionales para operar la clínica.',
+    });
   });
 
   it('keeps admin on setup-oriented surfaces only', () => {
     const capabilities = deriveActorCapabilities(user({ role: 'admin' }));
+    const directoryShell = resolveShellSurfaceMetadata('directory', capabilities);
 
     expect(capabilities.visibleSurfaces).toEqual(['directory']);
     expect(capabilities.defaultSurface).toBe('directory');
     expect(capabilities.directoryMode).toEqual({ kind: 'setup-shared' });
     expect(capabilities.agendaMode.kind).toBe('forbidden');
     expect(capabilities.patientsMode.kind).toBe('forbidden');
+    expect(directoryShell.intro.title).toBe('Directorio');
   });
 
   it('falls back to a blocked agenda-only shell for unknown roles', () => {
