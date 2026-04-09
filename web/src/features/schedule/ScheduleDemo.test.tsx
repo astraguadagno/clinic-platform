@@ -48,7 +48,7 @@ describe('ScheduleDemo auth failures', () => {
 
     const onSessionInvalid = vi.fn();
 
-    render(<ScheduleDemo currentUser={adminUser()} onSessionInvalid={onSessionInvalid} />);
+    render(<ScheduleDemo agendaMode={{ kind: 'operational-shared' }} onSessionInvalid={onSessionInvalid} />);
 
     await waitFor(() => {
       expect(onSessionInvalid).toHaveBeenCalledTimes(1);
@@ -69,18 +69,42 @@ describe('ScheduleDemo auth failures', () => {
 
     const onSessionInvalid = vi.fn();
 
-    render(<ScheduleDemo currentUser={adminUser()} onSessionInvalid={onSessionInvalid} />);
+    render(<ScheduleDemo agendaMode={{ kind: 'operational-shared' }} onSessionInvalid={onSessionInvalid} />);
 
     expect(await screen.findByText('Acceso denegado: No podés ver esta agenda.')).toBeInTheDocument();
     expect(onSessionInvalid).not.toHaveBeenCalled();
   });
+
+  it('locks doctors to their own professional agenda', async () => {
+    listProfessionalsMock.mockResolvedValue({
+      items: [activeProfessional(), secondProfessional()],
+    });
+    listPatientsMock.mockResolvedValue({
+      items: [activePatient()],
+    });
+    listSlotsMock.mockResolvedValue({ items: [] });
+    listAppointmentsMock.mockResolvedValue({ items: [] });
+
+    render(
+      <ScheduleDemo agendaMode={{ kind: 'doctor-own', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Ana Médica').length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole('combobox', { name: 'Profesional' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(listSlotsMock).toHaveBeenCalledWith({ professional_id: 'professional-1', date: expect.any(String) });
+    });
+  });
 });
 
-function adminUser() {
+function secondProfessional() {
   return {
-    id: 'user-1',
-    email: 'admin@example.com',
-    role: 'admin',
+    id: 'professional-2',
+    first_name: 'Beto',
+    last_name: 'Trauma',
+    specialty: 'Traumatología',
     active: true,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
