@@ -216,17 +216,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
 
   return (
     <div className="stack">
-      <header className="hero section-hero section-hero-card card">
-        <div className="hero-kicker">
-          {patientsMode.kind === 'doctor-clinical' ? 'Doctor workspace · alcance mínimo' : 'Pacientes operativos · secretaría'}
-        </div>
-        <h2>{patientsMode.kind === 'doctor-clinical' ? 'Pacientes activos y nota inicial' : 'Pacientes activos para agenda y administración'}</h2>
-        <p>
-          {patientsMode.kind === 'doctor-clinical'
-            ? 'Elegir paciente, ver encounters y registrar una evolución corta sin inventar una historia clínica completa.'
-            : 'Buscar y seleccionar pacientes para tareas operativas sin habilitar trabajo clínico ni encounters.'}
-        </p>
-
+      <section className="card stack">
         <div className="status-bar">
           <span className="badge neutral">Pacientes activos: {activePatients.length}</span>
           <span className="badge neutral">Encounters visibles: {encounters.length}</span>
@@ -236,7 +226,12 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
           {successMessage ? <span className="badge success">{successMessage}</span> : null}
           {patientsError ? <span className="badge error">{patientsError}</span> : null}
         </div>
-      </header>
+        <div className="inline-note">
+          {patientsMode.kind === 'doctor-clinical'
+            ? 'Elegí paciente, revisá encounters y registrá una evolución corta sin inventar una historia clínica completa.'
+            : 'Este cuerpo mantiene foco operativo: búsqueda y selección para secretaría sin habilitar trabajo clínico.'}
+        </div>
+      </section>
 
       <div className="patients-workspace-grid">
         <section className="card stack patients-sidebar">

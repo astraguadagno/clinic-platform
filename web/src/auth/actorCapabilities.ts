@@ -14,6 +14,24 @@ export type PatientsMode =
 
 export type DirectoryMode = { kind: 'setup-shared' } | { kind: 'forbidden'; message: string };
 
+export type ShellNavItem = {
+  id: SurfaceId;
+  label: string;
+  eyebrow: string;
+  description: string;
+};
+
+export type ShellSurfaceIntro = {
+  eyebrow: string;
+  title: string;
+  description: string;
+};
+
+export type ShellSurfaceMetadata = {
+  navItem: ShellNavItem;
+  intro: ShellSurfaceIntro;
+};
+
 export type ActorCapabilities = {
   visibleSurfaces: SurfaceId[];
   defaultSurface: SurfaceId;
@@ -74,5 +92,84 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
     agendaMode: { kind: 'forbidden', message: ROLE_ACCESS_MESSAGE },
     patientsMode: { kind: 'forbidden', message: ROLE_ACCESS_MESSAGE },
     directoryMode: { kind: 'forbidden', message: ROLE_ACCESS_MESSAGE },
+  };
+}
+
+export function resolveShellSurfaceMetadata(
+  surfaceId: SurfaceId,
+  capabilities: ActorCapabilities,
+): ShellSurfaceMetadata {
+  if (surfaceId === 'agenda') {
+    return capabilities.agendaMode.kind === 'doctor-own'
+      ? {
+          navItem: {
+            id: 'agenda',
+            label: 'Mi agenda',
+            eyebrow: 'Atención semanal',
+            description: 'Tus turnos y disponibilidad operativa de la semana.',
+          },
+          intro: {
+            eyebrow: 'Atención semanal',
+            title: 'Mi agenda',
+            description: 'Tus turnos y disponibilidad operativa de la semana.',
+          },
+        }
+      : {
+          navItem: {
+            id: 'agenda',
+            label: 'Agenda',
+            eyebrow: 'Gestión semanal',
+            description: 'Tablero operativo para comparar y accionar toda la semana.',
+          },
+          intro: {
+            eyebrow: 'Gestión semanal',
+            title: 'Agenda',
+            description: 'Tablero operativo para comparar y accionar toda la semana.',
+          },
+        };
+  }
+
+  if (surfaceId === 'patients') {
+    return capabilities.patientsMode.kind === 'secretary-operational'
+      ? {
+          navItem: {
+            id: 'patients',
+            label: 'Pacientes',
+            eyebrow: 'Admisión',
+            description: 'Búsqueda y selección para tareas administrativas.',
+          },
+          intro: {
+            eyebrow: 'Admisión',
+            title: 'Pacientes',
+            description: 'Búsqueda y selección para tareas administrativas.',
+          },
+        }
+      : {
+          navItem: {
+            id: 'patients',
+            label: 'Pacientes',
+            eyebrow: 'Seguimiento',
+            description: 'Resumen clínico y encounters del paciente.',
+          },
+          intro: {
+            eyebrow: 'Seguimiento',
+            title: 'Pacientes',
+            description: 'Resumen clínico y encounters del paciente.',
+          },
+        };
+  }
+
+  return {
+    navItem: {
+      id: 'directory',
+      label: 'Directorio',
+      eyebrow: 'Base clínica',
+      description: 'Pacientes y profesionales para operar la clínica.',
+    },
+    intro: {
+      eyebrow: 'Base clínica',
+      title: 'Directorio',
+      description: 'Pacientes y profesionales para operar la clínica.',
+    },
   };
 }

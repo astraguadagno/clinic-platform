@@ -75,6 +75,10 @@ button {
   margin: 0 auto;
 }
 
+.app-shell,
+.app-shell-frame {
+  gap: 20px;
+}
 .auth-shell {
   max-width: 560px;
 }
@@ -159,15 +163,59 @@ button {
 }
 
 .hero-product,
-.section-hero-card {
+.section-hero-card,
+.app-shell-header,
+.app-shell-surface-frame {
   gap: 18px;
 }
 
 .hero-product h1,
+.app-shell-header h1,
 .section-hero-card h1,
+.app-shell-surface-frame h2,
 .section-hero-card h2 {
   font-size: clamp(1.95rem, 3vw, 2.65rem);
   line-height: 1.08;
+}
+
+.app-shell-header-main,
+.app-shell-surface-intro,
+.app-shell-surface-content {
+  display: grid;
+  gap: 18px;
+}
+
+.app-shell-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(237, 244, 255, 0.92) 100%);
+}
+
+.app-shell-nav {
+  gap: 16px;
+}
+
+.app-shell-nav-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.app-shell-nav-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+}
+
+.app-shell-nav-header p,
+.app-shell-surface-intro p {
+  margin: 0;
+}
+
+.app-shell-surface-frame {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.app-shell-surface-content {
+  gap: 20px;
 }
 
 .hero-copy {
@@ -978,6 +1026,7 @@ button {
   }
 
   .surface-switcher-header,
+  .app-shell-nav-header,
   .section-header,
   .schedule-controls-head,
   .schedule-controls-toolbar {
@@ -998,7 +1047,9 @@ button {
   }
 
   .hero-product h1,
+  .app-shell-header h1,
   .section-hero-card h1,
+  .app-shell-surface-frame h2,
   .section-hero-card h2 {
     font-size: 1.8rem;
   }

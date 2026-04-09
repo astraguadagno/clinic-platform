@@ -37,8 +37,9 @@ describe('App actor-aware shell', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: 'Panel de trabajo de la clínica' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mi agenda' })).toBeInTheDocument();
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(
-      expect.arrayContaining(['Atención del díaMi agendaTus turnos y disponibilidad de hoy.', 'SeguimientoPacientesResumen clínico y encounters del paciente.']),
+      expect.arrayContaining(['Atención semanalMi agendaTus turnos y disponibilidad operativa de la semana.', 'SeguimientoPacientesResumen clínico y encounters del paciente.']),
     );
     expect(screen.getAllByRole('tab')).toHaveLength(2);
     expect(screen.getByText('schedule:doctor-own')).toBeInTheDocument();
@@ -50,9 +51,10 @@ describe('App actor-aware shell', () => {
     render(<App />);
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(
-      expect.arrayContaining(['Gestión diariaAgendaTurnos, disponibilidad y cambios del día.', 'AdmisiónPacientesBúsqueda y selección para tareas administrativas.']),
+      expect.arrayContaining(['Gestión semanalAgendaTablero operativo para comparar y accionar toda la semana.', 'AdmisiónPacientesBúsqueda y selección para tareas administrativas.']),
     );
     expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
     expect(screen.getByText('schedule:operational-shared')).toBeInTheDocument();
   });
 
@@ -81,6 +83,7 @@ describe('App actor-aware shell', () => {
 
     expect(screen.getAllByRole('tab')).toHaveLength(1);
     expect(screen.getAllByRole('tab')[0]?.textContent).toBe('Base clínicaDirectorioPacientes y profesionales para operar la clínica.');
+    expect(screen.getByRole('heading', { name: 'Directorio' })).toBeInTheDocument();
     expect(screen.getByText('directory:setup-shared')).toBeInTheDocument();
   });
 
@@ -93,6 +96,7 @@ describe('App actor-aware shell', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /Pacientes/i }));
 
+    expect(screen.getByRole('heading', { name: 'Pacientes' })).toBeInTheDocument();
     expect(screen.getByText('patients:secretary-operational')).toBeInTheDocument();
     expect(screen.queryByText('schedule:operational-shared')).not.toBeInTheDocument();
   });
