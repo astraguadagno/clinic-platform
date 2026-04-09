@@ -1,51 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
+import { deriveActorCapabilities, type SurfaceId } from './auth/actorCapabilities';
 import { useAuthSession } from './auth/useAuthSession';
 import { LoginScreen } from './features/auth/LoginScreen';
 import { DirectoryDemo } from './features/directory/DirectoryDemo';
 import { PatientsWorkspace } from './features/patients/PatientsWorkspace';
 import { ScheduleDemo } from './features/schedule/ScheduleDemo';
 
-type DemoSurface = 'agenda' | 'directory' | 'patients';
-
 type SurfaceDefinition = {
-  id: DemoSurface;
+  id: SurfaceId;
   label: string;
   eyebrow: string;
   description: string;
 };
 
-const SURFACES_BY_ROLE: Record<string, SurfaceDefinition[]> = {
-  secretary: [
-    { id: 'agenda', label: 'Agenda', eyebrow: 'Operación diaria', description: 'Turnos, slots y gestión básica.' },
-    { id: 'directory', label: 'Directorio', eyebrow: 'Carga base', description: 'Pacientes y profesionales.' },
-  ],
-  doctor: [
-    { id: 'agenda', label: 'Mi agenda', eyebrow: 'Atención diaria', description: 'Vista simple para la jornada.' },
-    { id: 'patients', label: 'Pacientes', eyebrow: 'Placeholder', description: 'Superficie mínima para Sprint 1.' },
-  ],
-  admin: [
-    { id: 'agenda', label: 'Agenda', eyebrow: 'Operación diaria', description: 'Turnos, slots y gestión básica.' },
-    { id: 'directory', label: 'Directorio', eyebrow: 'Carga base', description: 'Pacientes y profesionales.' },
-  ],
-};
-
-const DEFAULT_SURFACES: SurfaceDefinition[] = [
-  { id: 'agenda', label: 'Agenda', eyebrow: 'Operación diaria', description: 'Acceso mínimo mientras resolvemos el rol.' },
-];
-
 export default function App() {
   const auth = useAuthSession();
-  const availableSurfaces = useMemo(() => {
-    const role = auth.user?.role;
-    return SURFACES_BY_ROLE[role ?? ''] ?? DEFAULT_SURFACES;
-  }, [auth.user?.role]);
-  const [activeSurface, setActiveSurface] = useState<DemoSurface>('agenda');
+  const capabilities = useMemo(
+    () => (auth.user ? deriveActorCapabilities(auth.user) : null),
+    [auth.user],
+  );
+  const availableSurfaces = useMemo(
+    () => (capabilities ? capabilities.visibleSurfaces.map((surface) => getSurfaceDefinition(surface, capabilities)) : []),
+    [capabilities],
+  );
+  const [activeSurface, setActiveSurface] = useState<SurfaceId>('agenda');
 
   useEffect(() => {
-    if (!availableSurfaces.some((surface) => surface.id === activeSurface)) {
-      setActiveSurface(availableSurfaces[0]?.id ?? 'agenda');
+    if (!capabilities) {
+      setActiveSurface('agenda');
+      return;
     }
-  }, [activeSurface, availableSurfaces]);
+
+    if (!capabilities.visibleSurfaces.includes(activeSurface)) {
+      setActiveSurface(capabilities.defaultSurface);
+    }
+  }, [activeSurface, capabilities]);
 
   const activeSurfaceDefinition = availableSurfaces.find((surface) => surface.id === activeSurface) ?? availableSurfaces[0];
 
@@ -95,7 +84,7 @@ export default function App() {
 
           <div className="toolbar shell-toolbar">
             <span className="badge neutral">Expira: {formatSessionExpiry(auth.expiresAt)}</span>
-            {auth.user.role === 'admin' ? <span className="badge info">Admin: acceso amplio, shell mínimo por ahora</span> : null}
+            {auth.user.role === 'admin' ? <span className="badge info">Admin: foco en setup y configuración</span> : null}
             <button className="button button-secondary" type="button" onClick={auth.logout}>
               Cerrar sesión
             </button>
@@ -129,12 +118,49 @@ export default function App() {
           </div>
         </section>
 
-		{activeSurface === 'agenda' ? <ScheduleDemo currentUser={auth.user} onSessionInvalid={auth.logout} /> : null}
-        {activeSurface === 'directory' ? <DirectoryDemo /> : null}
-        {activeSurface === 'patients' ? <PatientsWorkspace currentUser={auth.user} /> : null}
+        {activeSurface === 'agenda' && capabilities ? (
+          <ScheduleDemo agendaMode={capabilities.agendaMode} onSessionInvalid={auth.logout} />
+        ) : null}
+        {activeSurface === 'directory' && capabilities ? (
+          <DirectoryDemo directoryMode={capabilities.directoryMode} onSessionInvalid={auth.logout} />
+        ) : null}
+        {activeSurface === 'patients' && capabilities ? (
+          <PatientsWorkspace patientsMode={capabilities.patientsMode} onSessionInvalid={auth.logout} />
+        ) : null}
       </div>
     </main>
   );
+}
+
+function getSurfaceDefinition(surfaceId: SurfaceId, capabilities: NonNullable<ReturnType<typeof deriveActorCapabilities>>): SurfaceDefinition {
+  if (surfaceId === 'agenda') {
+    return capabilities.agendaMode.kind === 'doctor-own'
+      ? { id: 'agenda', label: 'Mi agenda', eyebrow: 'Atención diaria', description: 'Vista enfocada en tu agenda profesional.' }
+      : { id: 'agenda', label: 'Agenda', eyebrow: 'Operación diaria', description: 'Turnos, slots y gestión operativa.' };
+  }
+
+  if (surfaceId === 'patients') {
+    return capabilities.patientsMode.kind === 'secretary-operational'
+      ? {
+          id: 'patients',
+          label: 'Pacientes',
+          eyebrow: 'Flujo operativo',
+          description: 'Búsqueda y selección para tareas administrativas y agenda.',
+        }
+      : {
+          id: 'patients',
+          label: 'Pacientes',
+          eyebrow: 'Atención clínica',
+          description: 'Resumen clínico mínimo y encounters del paciente.',
+        };
+  }
+
+  return {
+    id: 'directory',
+    label: 'Directorio',
+    eyebrow: 'Setup base',
+    description: 'Alta base de pacientes y profesionales.',
+  };
 }
 
 function formatSessionExpiry(expiresAt: string | null) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { type DirectoryMode } from '../../auth/actorCapabilities';
+import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import { createPatient, createProfessional, listPatients, listProfessionals } from '../../api/directory';
-import { ApiError } from '../../api/http';
 import type { CreatePatientPayload, CreateProfessionalPayload, Patient, Professional } from '../../types/directory';
 
 const EMPTY_PATIENT_FORM: CreatePatientPayload = {
@@ -18,7 +19,12 @@ const EMPTY_PROFESSIONAL_FORM: CreateProfessionalPayload = {
   specialty: '',
 };
 
-export function DirectoryDemo() {
+type DirectoryDemoProps = {
+  directoryMode: DirectoryMode;
+  onSessionInvalid: () => void;
+};
+
+export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemoProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [patientForm, setPatientForm] = useState<CreatePatientPayload>(EMPTY_PATIENT_FORM);
@@ -27,23 +33,53 @@ export function DirectoryDemo() {
   const [isCreatingPatient, setIsCreatingPatient] = useState(false);
   const [isCreatingProfessional, setIsCreatingProfessional] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  const handleApiFailure = useCallback(
+    (error: unknown, fallbackMessage: string, forbiddenFallbackMessage: string) => {
+      const resolution = resolveAuthenticatedViewError(error, onSessionInvalid, fallbackMessage, forbiddenFallbackMessage);
+
+      if (resolution.kind === 'session-invalid') {
+        return { errorMessage: '', accessDeniedMessage: '' };
+      }
+
+      if (resolution.kind === 'forbidden') {
+        return { errorMessage: '', accessDeniedMessage: resolution.message };
+      }
+
+      return { errorMessage: resolution.message, accessDeniedMessage: '' };
+    },
+    [onSessionInvalid],
+  );
+
   const bootstrap = useCallback(async () => {
+    if (directoryMode.kind === 'forbidden') {
+      setPatients([]);
+      setProfessionals([]);
+      setErrorMessage('');
+      setAccessDeniedMessage(directoryMode.message);
+      setIsBootstrapping(false);
+      return;
+    }
+
     try {
       setIsBootstrapping(true);
       setErrorMessage('');
+      setAccessDeniedMessage('');
 
       const [patientsResponse, professionalsResponse] = await Promise.all([listPatients(), listProfessionals()]);
 
       setPatients(patientsResponse.items);
       setProfessionals(professionalsResponse.items);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudo cargar el directorio demo.'));
+      const nextError = handleApiFailure(error, 'No se pudo cargar el directorio demo.', 'No tenés permiso para abrir el directorio.');
+      setErrorMessage(nextError.errorMessage);
+      setAccessDeniedMessage(nextError.accessDeniedMessage);
     } finally {
       setIsBootstrapping(false);
     }
-  }, []);
+  }, [directoryMode, handleApiFailure]);
 
   useEffect(() => {
     void bootstrap();
@@ -53,6 +89,7 @@ export function DirectoryDemo() {
     try {
       setIsCreatingPatient(true);
       setErrorMessage('');
+      setAccessDeniedMessage('');
       setSuccessMessage('');
 
       const patient = await createPatient(patientForm);
@@ -61,7 +98,9 @@ export function DirectoryDemo() {
       setPatientForm(EMPTY_PATIENT_FORM);
       setSuccessMessage('Paciente creado correctamente.');
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudo crear el paciente.'));
+      const nextError = handleApiFailure(error, 'No se pudo crear el paciente.', 'No tenés permiso para crear pacientes.');
+      setErrorMessage(nextError.errorMessage);
+      setAccessDeniedMessage(nextError.accessDeniedMessage);
     } finally {
       setIsCreatingPatient(false);
     }
@@ -71,6 +110,7 @@ export function DirectoryDemo() {
     try {
       setIsCreatingProfessional(true);
       setErrorMessage('');
+      setAccessDeniedMessage('');
       setSuccessMessage('');
 
       const professional = await createProfessional(professionalForm);
@@ -79,27 +119,37 @@ export function DirectoryDemo() {
       setProfessionalForm(EMPTY_PROFESSIONAL_FORM);
       setSuccessMessage('Profesional creado correctamente.');
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, 'No se pudo crear el profesional.'));
+      const nextError = handleApiFailure(error, 'No se pudo crear el profesional.', 'No tenés permiso para crear profesionales.');
+      setErrorMessage(nextError.errorMessage);
+      setAccessDeniedMessage(nextError.accessDeniedMessage);
     } finally {
       setIsCreatingProfessional(false);
     }
   }
 
+  if (directoryMode.kind === 'forbidden') {
+    return (
+      <section className="card stack" aria-live="polite">
+        <div className="hero-kicker">Directorio bloqueado</div>
+        <h2>Acceso denegado</h2>
+        <p>{directoryMode.message}</p>
+      </section>
+    );
+  }
+
   return (
     <div className="stack">
       <header className="hero section-hero section-hero-card card">
-        <div className="hero-kicker">Base de datos demo</div>
+        <div className="hero-kicker">Setup base</div>
         <h2>Directorio demo</h2>
-        <p>
-          Alta rápida y listado claro para poblar la demo sin mezclar esta superficie con la operación diaria de la
-          agenda.
-        </p>
+        <p>Alta rápida y listado claro para poblar la demo sin mezclar esta superficie con la operación diaria.</p>
         <div className="status-bar">
           <span className="badge neutral">Pacientes: {patients.length}</span>
           <span className="badge neutral">Profesionales: {professionals.length}</span>
-          <span className="badge info">Agenda ve altas nuevas al volver al tab</span>
+          <span className="badge info">Superficie de configuración liviana</span>
           {successMessage ? <span className="badge success">{successMessage}</span> : null}
           {errorMessage ? <span className="badge error">{errorMessage}</span> : null}
+          {accessDeniedMessage ? <span className="badge error">Acceso denegado: {accessDeniedMessage}</span> : null}
         </div>
       </header>
 
@@ -287,16 +337,4 @@ export function DirectoryDemo() {
       </div>
     </div>
   );
-}
-
-function getErrorMessage(error: unknown, fallbackMessage: string) {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallbackMessage;
 }
