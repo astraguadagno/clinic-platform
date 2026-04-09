@@ -19,13 +19,10 @@ export function LoginScreen({ errorMessage, isSubmitting, onLogin }: LoginScreen
     <main className="page page-centered auth-page">
       <div className="shell auth-shell">
         <section className="card auth-card stack">
-          <div className="hero-kicker">Sprint 1 · acceso mínimo</div>
+          <div className="hero-kicker">Acceso seguro</div>
           <div className="stack-tight">
-            <h1>Ingresá a Clinic Platform</h1>
-            <p>
-              Login simple contra <code>/directory-api/auth/login</code> con restauración de sesión usando{' '}
-              <code>/directory-api/auth/me</code>.
-            </p>
+            <h1>Ingresá a tu espacio de trabajo</h1>
+            <p>Usá tu usuario para entrar a la operación diaria de la clínica.</p>
           </div>
 
           <form className="stack" onSubmit={handleSubmit}>
@@ -55,17 +52,19 @@ export function LoginScreen({ errorMessage, isSubmitting, onLogin }: LoginScreen
 
             <div className="toolbar auth-toolbar">
               <button className="button" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Ingresando...' : 'Iniciar sesión'}
+                {isSubmitting ? 'Ingresando...' : 'Ingresar'}
               </button>
-              <span className="helper helper-inline">Seeds demo: admin/admin123 · secretary/secretary123 · doctor/doctor123</span>
+              <span className="helper helper-inline">
+                Credenciales disponibles para esta instancia: admin/admin123 · secretary/secretary123 · doctor/doctor123
+              </span>
             </div>
 
             {errorMessage ? <div className="inline-note inline-note-error">{errorMessage}</div> : null}
           </form>
 
           <div className="auth-footnotes">
-            <span className="badge neutral">Token guardado en localStorage para este sprint</span>
-            <span className="badge info">Sin router ni state manager extra</span>
+            <span className="badge neutral">La sesión queda abierta en este navegador</span>
+            <span className="badge info">Tu acceso define qué espacios vas a ver</span>
           </div>
         </section>
       </div>
