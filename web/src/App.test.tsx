@@ -34,15 +34,28 @@ describe('App actor-aware shell', () => {
   it('shows agenda and patients for doctors, defaulting to agenda', () => {
     useAuthSessionMock.mockReturnValue(authSession({ role: 'doctor', professional_id: 'professional-1' }));
 
-    render(<App />);
+    const { container } = render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Panel de trabajo de la clínica' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Mi agenda' })).toBeInTheDocument();
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(
-      expect.arrayContaining(['Atención semanalMi agendaTus turnos y disponibilidad operativa de la semana.', 'SeguimientoPacientesResumen clínico y encounters del paciente.']),
-    );
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getAllByText('Centro operativo clínico').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Amicus')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
+    const doctorNavButtons = screen.getAllByRole('button', { name: /Agenda|Pacientes/ });
+    expect(doctorNavButtons).toHaveLength(2);
+    expect(doctorNavButtons[0]).toHaveTextContent('Operación clínica');
+    expect(doctorNavButtons[0]).toHaveTextContent('Agenda');
+    expect(doctorNavButtons[1]).toHaveTextContent('Relación asistencial');
+    expect(doctorNavButtons[1]).toHaveTextContent('Pacientes');
+    expect(screen.getByRole('button', { name: /Agenda/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('schedule:doctor-own')).toBeInTheDocument();
+
+    const shellPage = container.querySelector('.page-app-shell');
+    expect(shellPage?.firstElementChild).toHaveClass('app-shell-layout');
+    expect(container.querySelector('.app-shell-frame')).not.toBeInTheDocument();
+    expect(container.querySelector('.app-shell-column > .app-shell-topbar')).toBeInTheDocument();
+    expect(container.querySelector('.app-shell-column > .app-shell-page-intro')).toBeInTheDocument();
+    expect(container.querySelector('.app-shell-column > .app-shell-stage')).toBeInTheDocument();
+    expect(container.querySelector('.app-shell-brand-image')).not.toBeInTheDocument();
+    expect(container.querySelector('.app-shell-brand-mark-fallback')).toHaveTextContent('A');
   });
 
   it('shows agenda and patients for secretaries without directory shell symmetry', () => {
@@ -50,10 +63,10 @@ describe('App actor-aware shell', () => {
 
     render(<App />);
 
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(
-      expect.arrayContaining(['Gestión semanalAgendaTablero operativo para comparar y accionar toda la semana.', 'AdmisiónPacientesBúsqueda y selección para tareas administrativas.']),
-    );
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    const secretaryNavButtons = screen.getAllByRole('button', { name: /Agenda|Pacientes/ });
+    expect(secretaryNavButtons).toHaveLength(2);
+    expect(secretaryNavButtons[0]).toHaveTextContent('Agenda');
+    expect(secretaryNavButtons[1]).toHaveTextContent('Pacientes');
     expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
     expect(screen.getByText('schedule:operational-shared')).toBeInTheDocument();
   });
@@ -73,7 +86,26 @@ describe('App actor-aware shell', () => {
     render(<App />);
 
     expect(screen.getByText('login-screen')).toBeInTheDocument();
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Áreas disponibles' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the loading surface outside the authenticated shell', () => {
+    useAuthSessionMock.mockReturnValue({
+      status: 'loading',
+      accessToken: null,
+      expiresAt: null,
+      user: null,
+      errorMessage: '',
+      isSubmitting: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+    });
+
+    render(<App />);
+
+    expect(screen.getByRole('heading', { name: 'Recuperando tu sesión...' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Áreas disponibles' })).not.toBeInTheDocument();
   });
 
   it('shows directory as the only default surface for admins', () => {
@@ -81,8 +113,10 @@ describe('App actor-aware shell', () => {
 
     render(<App />);
 
-    expect(screen.getAllByRole('tab')).toHaveLength(1);
-    expect(screen.getAllByRole('tab')[0]?.textContent).toBe('Base clínicaDirectorioPacientes y profesionales para operar la clínica.');
+    expect(screen.getByRole('navigation', { name: 'Áreas disponibles' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Directorio/ })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /Directorio/ })[0]).toHaveTextContent('Base operativa');
+    expect(screen.getAllByRole('button', { name: /Directorio/ })[0]).toHaveTextContent('Directorio');
     expect(screen.getByRole('heading', { name: 'Directorio' })).toBeInTheDocument();
     expect(screen.getByText('directory:setup-shared')).toBeInTheDocument();
   });
@@ -94,11 +128,56 @@ describe('App actor-aware shell', () => {
 
     expect(screen.getByText('schedule:operational-shared')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: /Pacientes/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Pacientes/i }));
 
+    expect(screen.getByRole('button', { name: /Pacientes/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('heading', { name: 'Pacientes' })).toBeInTheDocument();
     expect(screen.getByText('patients:secretary-operational')).toBeInTheDocument();
     expect(screen.queryByText('schedule:operational-shared')).not.toBeInTheDocument();
+  });
+
+  it('keeps the feature body inside the shell-owned stage when switching surfaces', () => {
+    useAuthSessionMock.mockReturnValue(authSession({ role: 'doctor', professional_id: 'professional-1' }));
+
+    render(<App />);
+
+    const agendaStage = screen.getByRole('region', { name: 'Contenido de Agenda' });
+    expect(agendaStage).toContainElement(screen.getByText('schedule:doctor-own'));
+    expect(agendaStage).not.toContainElement(screen.queryByText('patients:doctor-clinical'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Pacientes/i }));
+
+    const patientsStage = screen.getByRole('region', { name: 'Contenido de Pacientes' });
+    expect(patientsStage).toContainElement(screen.getByText('patients:doctor-clinical'));
+    expect(patientsStage).not.toContainElement(screen.queryByText('schedule:doctor-own'));
+  });
+
+  it('preserves blocked fallback shell behavior for unknown roles', () => {
+    useAuthSessionMock.mockReturnValue(authSession({ role: 'auditor' }));
+
+    render(<App />);
+
+    expect(screen.getAllByRole('button', { name: /Agenda/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Agenda/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
+    expect(screen.getByText('schedule:forbidden')).toBeInTheDocument();
+  });
+
+  it('keeps the rendered surface corrected to the allowed default when the actor loses the current one', () => {
+    useAuthSessionMock.mockReturnValue(authSession({ role: 'doctor', professional_id: 'professional-1' }));
+
+    const { rerender } = render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Pacientes/i }));
+    expect(screen.getByText('patients:doctor-clinical')).toBeInTheDocument();
+
+    useAuthSessionMock.mockReturnValue(authSession({ role: 'admin' }));
+    rerender(<App />);
+
+    expect(screen.getAllByRole('button', { name: /Directorio/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Directorio/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('directory:setup-shared')).toBeInTheDocument();
+    expect(screen.queryByText('patients:doctor-clinical')).not.toBeInTheDocument();
   });
 });
 

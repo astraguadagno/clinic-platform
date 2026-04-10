@@ -36,7 +36,8 @@ export default function App() {
     }
   }, [activeSurface, capabilities]);
 
-  const activeSurfaceDefinition = availableSurfaces.find((surface) => surface.id === activeSurface) ?? availableSurfaces[0];
+  const normalizedActiveSurface = capabilities?.visibleSurfaces.includes(activeSurface) ? activeSurface : capabilities?.defaultSurface;
+  const activeSurfaceDefinition = availableSurfaces.find((surface) => surface.id === normalizedActiveSurface) ?? availableSurfaces[0];
 
   if (auth.status === 'loading') {
     return (
@@ -56,29 +57,59 @@ export default function App() {
     return <LoginScreen errorMessage={auth.errorMessage} isSubmitting={auth.isSubmitting} onLogin={auth.login} />;
   }
 
+  const renderActiveSurface = () => {
+    if (!capabilities) {
+      return null;
+    }
+
+    if (normalizedActiveSurface === 'agenda') {
+      return <ScheduleDemo agendaMode={capabilities.agendaMode} onSessionInvalid={auth.logout} />;
+    }
+
+    if (normalizedActiveSurface === 'directory') {
+      return <DirectoryDemo directoryMode={capabilities.directoryMode} onSessionInvalid={auth.logout} />;
+    }
+
+    if (normalizedActiveSurface === 'patients') {
+      return <PatientsWorkspace patientsMode={capabilities.patientsMode} onSessionInvalid={auth.logout} />;
+    }
+
+    return null;
+  };
+
   return (
-    <AppShell
+      <AppShell
+      header={{
+        productName: 'Amicus',
+        workspaceName: 'Centro operativo clínico',
+        workspaceDescription: '',
+      }}
       account={{
         email: auth.user.email,
         role: auth.user.role,
         sessionExpiryLabel: formatSessionExpiry(auth.expiresAt),
-        isAdmin: auth.user.role === 'admin',
       }}
-      activeSurface={activeSurface}
-      activeSurfaceCountLabel={`${availableSurfaces.length} área(s) habilitada(s)`}
-      intro={activeSurfaceDefinition?.intro ?? { eyebrow: 'Espacio', title: 'Agenda', description: 'Cada vista conserva su propio foco.' }}
+      activeSurface={normalizedActiveSurface ?? activeSurface}
+      sidebar={{
+        eyebrow: 'Espacios',
+        title: 'Panel de trabajo',
+        description: '',
+      }}
+      pageIntro={{
+        ...(activeSurfaceDefinition?.intro ?? {
+          eyebrow: 'Espacio',
+          title: 'Agenda',
+          description: 'Cada vista conserva su propio foco.',
+        }),
+      }}
+      body={{
+        ariaLabel: `Contenido de ${activeSurfaceDefinition?.intro.title ?? 'Agenda'}`,
+        children: renderActiveSurface(),
+      }}
       navItems={availableSurfaces.map((surface) => surface.navItem)}
       onLogout={auth.logout}
       onSelectSurface={setActiveSurface}
-    >
-      {activeSurface === 'agenda' && capabilities ? <ScheduleDemo agendaMode={capabilities.agendaMode} onSessionInvalid={auth.logout} /> : null}
-      {activeSurface === 'directory' && capabilities ? (
-        <DirectoryDemo directoryMode={capabilities.directoryMode} onSessionInvalid={auth.logout} />
-      ) : null}
-      {activeSurface === 'patients' && capabilities ? (
-        <PatientsWorkspace patientsMode={capabilities.patientsMode} onSessionInvalid={auth.logout} />
-      ) : null}
-    </AppShell>
+    />
   );
 }
 
