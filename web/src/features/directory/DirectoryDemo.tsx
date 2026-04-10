@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import { type DirectoryMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import { createPatient, createProfessional, listPatients, listProfessionals } from '../../api/directory';
@@ -129,17 +130,15 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
 
   if (directoryMode.kind === 'forbidden') {
     return (
-      <section className="card stack" aria-live="polite">
-        <div className="hero-kicker">Directorio bloqueado</div>
-        <h2>Acceso denegado</h2>
-        <p>{directoryMode.message}</p>
-      </section>
+      <PageContainer>
+        <EmptyState eyebrow="Directorio bloqueado" title="Acceso denegado" description={directoryMode.message} />
+      </PageContainer>
     );
   }
 
   return (
-    <div className="stack">
-      <section className="card stack">
+    <PageContainer className="stack">
+      <SectionCard className="stack">
         <div className="status-bar">
           <span className="badge neutral">Pacientes: {patients.length}</span>
           <span className="badge neutral">Profesionales: {professionals.length}</span>
@@ -149,10 +148,10 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
           {accessDeniedMessage ? <span className="badge error">Acceso denegado: {accessDeniedMessage}</span> : null}
         </div>
         <div className="inline-note">Alta rápida y listados claros para poblar la demo sin mezclar esta superficie con la operación diaria.</div>
-      </section>
+      </SectionCard>
 
       <div className="directory-grid">
-        <section className="card stack">
+        <SectionCard className="stack">
           <div className="section-header">
             <div>
               <h3>Pacientes</h3>
@@ -252,9 +251,9 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
               ))}
             </div>
           )}
-        </section>
+        </SectionCard>
 
-        <section className="card stack">
+        <SectionCard className="stack">
           <div className="section-header">
             <div>
               <h3>Profesionales</h3>
@@ -331,8 +330,8 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
               ))}
             </div>
           )}
-        </section>
+        </SectionCard>
       </div>
-    </div>
+    </PageContainer>
   );
 }

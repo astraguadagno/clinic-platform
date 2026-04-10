@@ -14,14 +14,14 @@ describe('deriveActorCapabilities', () => {
     expect(capabilities.directoryMode.kind).toBe('forbidden');
     expect(agendaShell.navItem).toEqual({
       id: 'agenda',
-      label: 'Mi agenda',
-      eyebrow: 'Atención semanal',
-      description: 'Tus turnos y disponibilidad operativa de la semana.',
+      label: 'Agenda',
+      eyebrow: 'Operación clínica',
+      description: 'Turnos del día.',
     });
     expect(patientsShell.intro).toEqual({
-      eyebrow: 'Seguimiento',
+      eyebrow: 'Relación asistencial',
       title: 'Pacientes',
-      description: 'Resumen clínico y encounters del paciente.',
+      description: 'Seguimiento clínico del panel activo.',
     });
   });
 
@@ -52,15 +52,15 @@ describe('deriveActorCapabilities', () => {
     expect(capabilities.directoryMode).toEqual({ kind: 'setup-shared' });
     expect(agendaShell.navItem.label).toBe('Agenda');
     expect(patientsShell.intro).toEqual({
-      eyebrow: 'Admisión',
+      eyebrow: 'Relación asistencial',
       title: 'Pacientes',
-      description: 'Búsqueda y selección para tareas administrativas.',
+      description: 'Seguimiento clínico del panel activo.',
     });
     expect(directoryShell.navItem).toEqual({
       id: 'directory',
       label: 'Directorio',
-      eyebrow: 'Base clínica',
-      description: 'Pacientes y profesionales para operar la clínica.',
+      eyebrow: 'Base operativa',
+      description: 'Base operativa.',
     });
   });
 

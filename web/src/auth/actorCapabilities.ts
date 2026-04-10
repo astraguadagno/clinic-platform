@@ -43,6 +43,48 @@ export type ActorCapabilities = {
 const DOCTOR_ASSOCIATION_MESSAGE = 'Tu usuario doctor no tiene professional_id asociado.';
 const ROLE_ACCESS_MESSAGE = 'Tu rol no tiene acceso a esta superficie.';
 
+const SHELL_SURFACE_COPY: Record<SurfaceId, ShellSurfaceMetadata> = {
+  agenda: {
+    navItem: {
+      id: 'agenda',
+      label: 'Agenda',
+      eyebrow: 'Operación clínica',
+      description: 'Turnos del día.',
+    },
+    intro: {
+      eyebrow: 'Operación clínica',
+      title: 'Agenda',
+      description: 'Turnos y disponibilidad en una sola vista.',
+    },
+  },
+  patients: {
+    navItem: {
+      id: 'patients',
+      label: 'Pacientes',
+      eyebrow: 'Relación asistencial',
+      description: 'Seguimiento activo.',
+    },
+    intro: {
+      eyebrow: 'Relación asistencial',
+      title: 'Pacientes',
+      description: 'Seguimiento clínico del panel activo.',
+    },
+  },
+  directory: {
+    navItem: {
+      id: 'directory',
+      label: 'Directorio',
+      eyebrow: 'Base operativa',
+      description: 'Base operativa.',
+    },
+    intro: {
+      eyebrow: 'Base operativa',
+      title: 'Directorio',
+      description: 'Personas y equipos disponibles.',
+    },
+  },
+};
+
 export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
   const professionalId = user.professional_id?.trim() ?? '';
 
@@ -97,79 +139,7 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
 
 export function resolveShellSurfaceMetadata(
   surfaceId: SurfaceId,
-  capabilities: ActorCapabilities,
+  _capabilities: ActorCapabilities,
 ): ShellSurfaceMetadata {
-  if (surfaceId === 'agenda') {
-    return capabilities.agendaMode.kind === 'doctor-own'
-      ? {
-          navItem: {
-            id: 'agenda',
-            label: 'Mi agenda',
-            eyebrow: 'Atención semanal',
-            description: 'Tus turnos y disponibilidad operativa de la semana.',
-          },
-          intro: {
-            eyebrow: 'Atención semanal',
-            title: 'Mi agenda',
-            description: 'Tus turnos y disponibilidad operativa de la semana.',
-          },
-        }
-      : {
-          navItem: {
-            id: 'agenda',
-            label: 'Agenda',
-            eyebrow: 'Gestión semanal',
-            description: 'Tablero operativo para comparar y accionar toda la semana.',
-          },
-          intro: {
-            eyebrow: 'Gestión semanal',
-            title: 'Agenda',
-            description: 'Tablero operativo para comparar y accionar toda la semana.',
-          },
-        };
-  }
-
-  if (surfaceId === 'patients') {
-    return capabilities.patientsMode.kind === 'secretary-operational'
-      ? {
-          navItem: {
-            id: 'patients',
-            label: 'Pacientes',
-            eyebrow: 'Admisión',
-            description: 'Búsqueda y selección para tareas administrativas.',
-          },
-          intro: {
-            eyebrow: 'Admisión',
-            title: 'Pacientes',
-            description: 'Búsqueda y selección para tareas administrativas.',
-          },
-        }
-      : {
-          navItem: {
-            id: 'patients',
-            label: 'Pacientes',
-            eyebrow: 'Seguimiento',
-            description: 'Resumen clínico y encounters del paciente.',
-          },
-          intro: {
-            eyebrow: 'Seguimiento',
-            title: 'Pacientes',
-            description: 'Resumen clínico y encounters del paciente.',
-          },
-        };
-  }
-
-  return {
-    navItem: {
-      id: 'directory',
-      label: 'Directorio',
-      eyebrow: 'Base clínica',
-      description: 'Pacientes y profesionales para operar la clínica.',
-    },
-    intro: {
-      eyebrow: 'Base clínica',
-      title: 'Directorio',
-      description: 'Pacientes y profesionales para operar la clínica.',
-    },
-  };
+  return SHELL_SURFACE_COPY[surfaceId];
 }

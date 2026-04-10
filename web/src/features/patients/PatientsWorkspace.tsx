@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import { type PatientsMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import { createPatientEncounter, listPatientEncounters } from '../../api/clinical';
@@ -206,17 +207,15 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
 
   if (patientsMode.kind === 'forbidden') {
     return (
-      <section className="card stack" aria-live="polite">
-        <div className="hero-kicker">Pacientes bloqueado</div>
-        <h2>Acceso denegado</h2>
-        <p>{patientsMode.message}</p>
-      </section>
+      <PageContainer>
+        <EmptyState eyebrow="Pacientes bloqueado" title="Acceso denegado" description={patientsMode.message} />
+      </PageContainer>
     );
   }
 
   return (
-    <div className="stack">
-      <section className="card stack">
+    <PageContainer className="stack">
+      <SectionCard className="stack">
         <div className="status-bar">
           <span className="badge neutral">Pacientes activos: {activePatients.length}</span>
           <span className="badge neutral">Encounters visibles: {encounters.length}</span>
@@ -231,10 +230,10 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
             ? 'Elegí paciente, revisá encounters y registrá una evolución corta sin inventar una historia clínica completa.'
             : 'Este cuerpo mantiene foco operativo: búsqueda y selección para secretaría sin habilitar trabajo clínico.'}
         </div>
-      </section>
+      </SectionCard>
 
       <div className="patients-workspace-grid">
-        <section className="card stack patients-sidebar">
+        <SectionCard className="stack patients-sidebar">
           <div className="section-header">
             <div>
               <h3>Pacientes activos</h3>
@@ -275,10 +274,10 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
               })}
             </div>
           )}
-        </section>
+        </SectionCard>
 
         <div className="stack patients-main">
-          <section className="card stack">
+          <SectionCard className="stack">
             <div className="section-header">
               <div>
                 <h3>Resumen del paciente</h3>
@@ -330,9 +329,9 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
                 </div>
               </>
             )}
-          </section>
+          </SectionCard>
 
-          <section className="card stack">
+          <SectionCard className="stack">
             <div className="section-header">
               <div>
                 <h3>Encounters</h3>
@@ -384,9 +383,9 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
                 ))}
               </div>
             )}
-          </section>
+          </SectionCard>
 
-          <section className="card stack">
+          <SectionCard className="stack">
             <div className="section-header">
               <div>
                 <h3>Nueva nota / evolución</h3>
@@ -433,10 +432,10 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
                 {canAccessClinical ? 'Sin router, sin wizard, sin historia clínica completa.' : 'Modo operativo: sin escritura clínica.'}
               </span>
             </div>
-          </section>
+          </SectionCard>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

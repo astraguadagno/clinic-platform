@@ -1,90 +1,118 @@
+import { Badge } from './AppShell.primitives';
 import type { AppShellProps } from './AppShell.types';
 
 export function AppShell({
+  header,
   account,
   activeSurface,
-  activeSurfaceCountLabel,
-  children,
-  intro,
+  body,
+  pageIntro,
   navItems,
   onLogout,
   onSelectSurface,
 }: AppShellProps) {
   const activeNavItem = navItems.find((item) => item.id === activeSurface) ?? navItems[0];
+  const surfaceToneClass = `app-shell-surface-${activeSurface}`;
+  const productWords = header.productName.trim().split(/\s+/);
+  const brandLead = productWords[0] ?? header.productName;
+  const brandTail = productWords.slice(1).join(' ');
+  const brandInitials = productWords
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('');
 
   return (
-    <main className="page">
-      <div className="shell app-shell-frame stack">
-        <header className="card app-shell-header stack">
-          <div className="app-shell-header-main">
-            <div className="stack-tight hero-copy">
-              <div className="hero-kicker">Clinic Platform · sesión activa</div>
-              <h1>Panel de trabajo de la clínica</h1>
-              <p>
-                Entrá con tu perfil y seguí la operación diaria desde los espacios habilitados para ese rol, sin cambiar
-                el flujo actual.
-              </p>
-            </div>
-
-            <div className="hero-summary-grid">
-              <article className="summary-tile">
-                <span className="summary-label">Espacio actual</span>
-                <strong>{activeNavItem?.label ?? intro.title}</strong>
-                <small>{activeNavItem?.description ?? intro.description}</small>
-              </article>
-              <article className="summary-tile">
-                <span className="summary-label">Cuenta</span>
-                <strong>{account.email}</strong>
-                <small>Perfil: {account.role}</small>
-              </article>
+    <main className={`page page-app-shell ${surfaceToneClass}`}>
+      <div className="app-shell-layout">
+        <aside className="app-shell-rail" aria-label="Navegación principal">
+          <div className="app-shell-rail-brand-block stack">
+            <div className="app-shell-brand">
+              {header.logo ? (
+                <span className="app-shell-brand-mark app-shell-brand-mark-image-wrap">
+                  <img className="app-shell-brand-image" src={header.logo.src} alt={header.logo.alt} />
+                </span>
+              ) : (
+                <span className="app-shell-brand-mark app-shell-brand-mark-fallback" aria-hidden="true">
+                  {brandInitials}
+                </span>
+              )}
+              <div className="stack-tight app-shell-brand-copy">
+                <span className="hero-kicker">{header.workspaceName}</span>
+                <strong className="app-shell-brand-wordmark">
+                  <span>{brandLead}</span>
+                  {brandTail ? <span>{brandTail}</span> : null}
+                </strong>
+              </div>
             </div>
           </div>
 
-          <div className="toolbar shell-toolbar">
-            <span className="badge neutral">Expira: {account.sessionExpiryLabel}</span>
-            {account.isAdmin ? <span className="badge info">Admin: mantenimiento y configuración base</span> : null}
-            <button className="button button-secondary" type="button" onClick={onLogout}>
+          <nav className="app-shell-nav" aria-label="Áreas disponibles">
+            <ul className="app-shell-nav-list" role="list">
+              {navItems.map((surface) => (
+                <li key={surface.id}>
+                  <button
+                    type="button"
+                    aria-pressed={activeSurface === surface.id}
+                    className={`app-shell-nav-item${activeSurface === surface.id ? ' active' : ''}`}
+                    onClick={() => onSelectSurface(surface.id)}
+                  >
+                    <span className="app-shell-nav-item-marker" aria-hidden="true" />
+                    <span className="app-shell-nav-item-copy">
+                      <span className="surface-tab-eyebrow">{surface.eyebrow}</span>
+                      <strong>{surface.label}</strong>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          <footer className="app-shell-rail-footer stack-tight" aria-label="Cuenta">
+            <div className="app-shell-rail-account stack-tight">
+              <span className="summary-label">Cuenta activa</span>
+              <strong>{account.email}</strong>
+              <small>{account.role}</small>
+            </div>
+
+            <button className="button button-secondary app-shell-rail-logout" type="button" onClick={onLogout}>
               Cerrar sesión
             </button>
-          </div>
-        </header>
+          </footer>
+        </aside>
 
-        <section className="card app-shell-nav stack-tight" aria-label="Selector de espacios">
-          <div className="app-shell-nav-header">
-            <div>
-              <h2>Tu espacio de trabajo</h2>
-              <p>Mostramos solamente las áreas disponibles para este perfil, con el mismo acceso y permisos de hoy.</p>
+        <div className="app-shell-column">
+          <header className="app-shell-topbar">
+            <div className="app-shell-topbar-context stack-tight">
+              <span className="summary-label">{header.workspaceName}</span>
+              <strong>{activeNavItem?.label ?? pageIntro.title}</strong>
             </div>
-            <span className="badge neutral">{activeSurfaceCountLabel}</span>
-          </div>
 
-          <div className="surface-tabs" role="tablist" aria-label="Áreas disponibles">
-            {navItems.map((surface) => (
-              <button
-                key={surface.id}
-                type="button"
-                role="tab"
-                aria-selected={activeSurface === surface.id}
-                className={`surface-tab${activeSurface === surface.id ? ' active' : ''}`}
-                onClick={() => onSelectSurface(surface.id)}
-              >
-                <span className="surface-tab-eyebrow">{surface.eyebrow}</span>
-                <strong>{surface.label}</strong>
-                <small>{surface.description}</small>
-              </button>
-            ))}
-          </div>
-        </section>
+            <div className="app-shell-topbar-meta">
+              <div className="app-shell-topbar-account stack-tight" aria-label="Sesión activa">
+                <span className="summary-label">Sesión activa</span>
+                <strong>{account.email}</strong>
+              </div>
 
-        <section className="card app-shell-surface-frame stack-tight">
-          <div className="stack-tight app-shell-surface-intro">
-            <span className="hero-kicker">{intro.eyebrow}</span>
-            <h2>{intro.title}</h2>
-            <p>{intro.description}</p>
-          </div>
-        </section>
+              <div className="app-shell-topbar-badges">
+                <Badge>Expira: {account.sessionExpiryLabel}</Badge>
+              </div>
+            </div>
+          </header>
 
-        <div className="app-shell-surface-content">{children}</div>
+          <section className="app-shell-page-intro">
+            <div className="app-shell-page-intro-copy stack-tight">
+              <span className="hero-kicker">{pageIntro.eyebrow}</span>
+              <h1>{pageIntro.title}</h1>
+              <p>{pageIntro.description}</p>
+            </div>
+          </section>
+
+          <section className="app-shell-stage" aria-label={body.ariaLabel ?? `Contenido de ${pageIntro.title}`}>
+            <div className="app-shell-stage-frame">
+              <div className="app-shell-body-stage">{body.children}</div>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );

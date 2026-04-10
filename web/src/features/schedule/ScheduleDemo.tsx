@@ -3,6 +3,7 @@ import { cancelAppointment, createAppointment, createSlotsBulk, listOperationalW
 import { listPatients, listProfessionals } from '../../api/directory';
 import { type AgendaMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
+import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import type { Appointment, BulkCreateSlotsPayload, Slot } from '../../types/appointments';
 import type { Patient, Professional } from '../../types/directory';
 import {
@@ -324,17 +325,15 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
 
   if (agendaMode.kind === 'forbidden') {
     return (
-      <section className="card stack schedule-demo" aria-live="polite">
-        <div className="hero-kicker">Agenda bloqueada</div>
-        <h1>Acceso denegado</h1>
-        <p>{agendaMode.message}</p>
-      </section>
+      <PageContainer className="schedule-demo">
+        <EmptyState eyebrow="Agenda bloqueada" title="Acceso denegado" description={agendaMode.message} className="schedule-shell-empty" />
+      </PageContainer>
     );
   }
 
   return (
-    <div className="stack schedule-demo">
-      <section className="card schedule-overview stack">
+    <PageContainer className="stack schedule-demo">
+      <SectionCard className="schedule-overview stack">
         <div className="stack">
           <div className="schedule-hero-badges status-bar">
             <span className="badge neutral">Profesionales activos: {professionals.length}</span>
@@ -381,9 +380,9 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             </article>
           </div>
         </div>
-      </section>
+      </SectionCard>
 
-      <section className="card card-accent schedule-controls-card stack">
+      <SectionCard className="card-accent schedule-controls-card stack">
         <div className="schedule-controls-head">
           <div>
             <span className="summary-label">Contexto</span>
@@ -453,7 +452,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             </button>
           </div>
         </div>
-      </section>
+      </SectionCard>
 
       <div className="layout schedule-layout">
         <section className="stack schedule-main">
@@ -583,7 +582,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             </div>
           </section>
 
-          <section className="card schedule-booking-card stack">
+          <SectionCard className="schedule-booking-card stack">
             <div>
               <span className="summary-label">Reserva</span>
               <h2>Reservar turno</h2>
@@ -614,11 +613,11 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             <button className="button" type="button" onClick={() => void handleBookAppointment()} disabled={isBootstrapping || isRefreshingAgenda || isBooking || !selectedSlotId || !selectedPatientId}>
               {isBooking ? 'Reservando...' : 'Reservar turno'}
             </button>
-          </section>
+          </SectionCard>
         </section>
 
         <aside className="schedule-sidebar stack">
-          <section className="card schedule-generator-card stack" aria-labelledby="generate-slots-title">
+          <SectionCard className="schedule-generator-card stack" aria-labelledby="generate-slots-title">
             <div className="stack-tight">
               <span className="summary-label schedule-dark-eyebrow">Soporte</span>
               <h2 id="generate-slots-title">Generar slots</h2>
@@ -664,9 +663,9 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             <button className="button schedule-generator-button" type="button" onClick={() => void handleCreateSlots()} disabled={isBootstrapping || isRefreshingAgenda || isCreatingSlots || !selectedProfessionalId || !selectedDate}>
               {isCreatingSlots ? 'Generando...' : 'Generar slots'}
             </button>
-          </section>
+          </SectionCard>
         </aside>
       </div>
-    </div>
+    </PageContainer>
   );
 }
