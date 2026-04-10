@@ -894,79 +894,8 @@ button {
   --schedule-ghost-border: rgba(87, 0, 0, 0.12);
 }
 
-.schedule-overview {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  gap: 24px;
-  align-items: start;
-}
-
-.schedule-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.95fr);
-  gap: 24px;
-  padding: 32px;
-  border-color: var(--schedule-ghost-border);
-  background:
-    radial-gradient(circle at top right, rgba(254, 214, 91, 0.14), transparent 34%),
-    linear-gradient(180deg, rgba(255, 251, 247, 0.98) 0%, rgba(247, 239, 235, 0.96) 100%);
-  box-shadow: 0 18px 38px rgba(43, 23, 24, 0.06);
-}
-
-.schedule-hero-copy {
-  align-content: start;
-}
-
-.schedule-hero-copy p {
-  max-width: 60ch;
-  color: var(--schedule-soft-text);
-}
-
-.schedule-hero-badges {
-  margin-top: 2px;
-}
-
-.schedule-hero-panel {
-  display: grid;
-  gap: 16px;
-  align-content: start;
-  padding: 22px;
-  border-radius: 24px;
-  border: 1px solid rgba(87, 0, 0, 0.08);
-  background: rgba(255, 252, 250, 0.82);
-  backdrop-filter: blur(18px);
-}
-
-.schedule-hero-panel-head {
-  display: grid;
-  gap: 4px;
-}
-
-.schedule-hero-panel-head strong {
-  font-size: 1.2rem;
-  color: var(--schedule-ink);
-}
-
-.schedule-stat-card {
-  display: grid;
-  gap: 4px;
-  padding: 14px;
-  border: 1px solid rgba(87, 0, 0, 0.06);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(250, 245, 241, 0.92) 100%);
-}
-
-.schedule-stat-card strong {
-  font-size: 1.02rem;
-  color: var(--schedule-ink);
-}
-
-.schedule-layout {
-  align-items: start;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
-}
-
-.schedule-controls-card,
-.schedule-booking-card,
+.schedule-context-bar,
+.schedule-board-shell,
 .schedule-slots-card,
 .schedule-appointments-card,
 .schedule-generator-card {
@@ -974,30 +903,85 @@ button {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(249, 244, 240, 0.96) 100%);
 }
 
-.schedule-controls-head,
-.schedule-controls-toolbar {
+.schedule-context-bar {
+  display: grid;
+  gap: 18px;
+  padding: 22px 24px;
+  border-color: var(--schedule-ghost-border);
+  box-shadow: 0 18px 38px rgba(43, 23, 24, 0.06);
+}
+
+.schedule-context-bar-main,
+.schedule-context-bar-actions,
+.schedule-board-header,
+.schedule-modal-head,
+.schedule-modal-actions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
-.schedule-controls-toolbar {
+.schedule-context-bar-main,
+.schedule-context-bar-actions,
+.schedule-board-toolbar,
+.schedule-modal-actions {
   flex-wrap: wrap;
 }
 
-.schedule-filters-grid,
-.schedule-primary-grid {
+.schedule-context-bar-week,
+.schedule-context-bar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.schedule-context-bar-controls {
+  max-width: 380px;
+}
+
+.schedule-context-bar-controls .field {
+  min-width: min(320px, 100%);
+  flex: 1 1 280px;
+}
+
+.schedule-board-shell {
+  gap: 22px;
+  padding: 26px;
+  min-width: 0;
+}
+
+.schedule-board-header {
+  align-items: flex-start;
+}
+
+.schedule-board-toolbar {
   display: grid;
-  gap: 18px;
+  gap: 12px;
+  justify-items: end;
 }
 
-.schedule-filters-grid {
-  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+.schedule-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(23, 32, 51, 0.44);
+  backdrop-filter: blur(6px);
+  z-index: 30;
 }
 
-.schedule-primary-grid {
-  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+.schedule-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border-color: rgba(87, 0, 0, 0.12);
+}
+
+.schedule-modal-head {
+  align-items: center;
 }
 
 .patients-workspace-grid {

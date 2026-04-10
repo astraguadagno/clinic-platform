@@ -84,7 +84,7 @@ describe('ScheduleDemo weekly operational board', () => {
     );
 
     expect(screen.getByText('Agenda bloqueada')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Acceso denegado' })).toBeInTheDocument();
+    expect(screen.getByText('Acceso denegado')).toBeInTheDocument();
     expect(screen.getByText('Tu perfil no tiene permisos para usar esta agenda.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Actualizar/i })).not.toBeInTheDocument();
     expect(listProfessionalsMock).not.toHaveBeenCalled();
@@ -151,9 +151,48 @@ describe('ScheduleDemo weekly operational board', () => {
     expect(screen.queryByText(/Sáb/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Dom/i)).not.toBeInTheDocument();
     expect(screen.getAllByText('Sin actividad para este día').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Contexto de agenda')).not.toBeInTheDocument();
+    expect(screen.queryByText('Filtros de agenda')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Paciente')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Desde')).not.toBeInTheDocument();
   });
 
-  it('uses the selected slot cell as the only booking selector and preserves supported actions only', async () => {
+  it('keeps a single compact context surface on constrained viewports', async () => {
+    const originalInnerWidth = window.innerWidth;
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 375,
+      writable: true,
+    });
+    window.dispatchEvent(new Event('resize'));
+
+    listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    mockWeekSlices({
+      '2026-04-08': { slots: [availableSlot('slot-wed', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')] },
+    });
+
+    render(<ScheduleDemo agendaMode={{ kind: 'operational-shared' }} onSessionInvalid={vi.fn()} />);
+
+    expect(await screen.findByRole('heading', { name: 'Agenda semanal operativa' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Semana UTC/i)).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Reservar turno' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Generar slots' })).toHaveLength(1);
+    expect(screen.queryByText('Contexto de agenda')).not.toBeInTheDocument();
+    expect(screen.queryByText('Filtros de agenda')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Paciente')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Desde')).not.toBeInTheDocument();
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: originalInnerWidth,
+      writable: true,
+    });
+    window.dispatchEvent(new Event('resize'));
+  });
+
+  it('opens booking through a modal launched from the selected slot context', async () => {
     listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
     listPatientsMock.mockResolvedValue({ items: [activePatient()] });
     mockWeekRefreshes([
@@ -180,15 +219,26 @@ describe('ScheduleDemo weekly operational board', () => {
 
     const slotCell = await screen.findByRole('button', { name: /Mié 08\/04 .*10:00 - 10:30 UTC/i });
 
-    expect(screen.queryByLabelText('Slot a reservar')).not.toBeInTheDocument();
-    expect(screen.getByText('Elegí profesional y semana para cargar la operación visible sin salir del espacio actual.')).toBeInTheDocument();
-    expect(screen.getByText('Acción secundaria: cargá disponibilidad para el día seleccionado sin salir de esta vista.')).toBeInTheDocument();
+    const bookTrigger = screen.getByRole('button', { name: 'Reservar turno' });
+
+    expect(bookTrigger).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Reprogramar/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Ver detalle/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Paciente')).not.toBeInTheDocument();
 
     fireEvent.click(slotCell);
-    fireEvent.click(screen.getByRole('button', { name: 'Reservar turno' }));
+
+    expect(bookTrigger).toBeEnabled();
+
+    fireEvent.click(bookTrigger);
+
+    const bookingDialog = await screen.findByRole('dialog', { name: /Reservar turno/i });
+
+    expect(within(bookingDialog).getByLabelText('Paciente')).toBeInTheDocument();
+    expect(within(bookingDialog).getByText(/Mié 08\/04/i)).toBeInTheDocument();
+
+    fireEvent.click(within(bookingDialog).getByRole('button', { name: 'Confirmar reserva' }));
 
     await waitFor(() => {
       expect(createAppointmentMock).toHaveBeenCalledWith({
@@ -199,11 +249,14 @@ describe('ScheduleDemo weekly operational board', () => {
     });
 
     expect(await screen.findByText('Turno reservado correctamente.')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /Reservar turno/i })).not.toBeInTheDocument();
+    });
     expect(await screen.findByText('Juan Pérez')).toBeInTheDocument();
     expect(screen.getByText('Reservado')).toBeInTheDocument();
   });
 
-  it('lets the operator select a weekday card and keeps support actions bound to that selected day', async () => {
+  it('opens slot generation through a modal bound to the selected day', async () => {
     listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
     listPatientsMock.mockResolvedValue({ items: [activePatient()] });
     mockWeekRefreshes([
@@ -222,7 +275,17 @@ describe('ScheduleDemo weekly operational board', () => {
     expect(weekdayCard).toHaveAttribute('aria-pressed', 'true');
     expect(await screen.findAllByText('Sin actividad para este día')).not.toHaveLength(0);
 
+    expect(screen.queryByLabelText('Desde')).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: 'Generar slots' }));
+
+    const generateDialog = await screen.findByRole('dialog', { name: /Generar slots/i });
+
+    expect(within(generateDialog).getByLabelText('Desde')).toBeInTheDocument();
+    expect(within(generateDialog).getByLabelText('Hasta')).toBeInTheDocument();
+    expect(within(generateDialog).getAllByText(/Mié 08\/04/i).length).toBeGreaterThan(0);
+
+    fireEvent.click(within(generateDialog).getByRole('button', { name: 'Confirmar generación' }));
 
     await waitFor(() => {
       expect(createSlotsBulkMock).toHaveBeenCalledWith({
@@ -235,6 +298,9 @@ describe('ScheduleDemo weekly operational board', () => {
     });
 
     expect(await screen.findByText('Se generaron 1 slot correctamente.')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /Generar slots/i })).not.toBeInTheDocument();
+    });
     expect(await screen.findByRole('button', { name: /Mié 08\/04 .*09:00 - 09:30 UTC/i })).toBeInTheDocument();
   });
 
@@ -272,6 +338,39 @@ describe('ScheduleDemo weekly operational board', () => {
     expect(within(screen.getByTestId('board-cell-2026-04-08-09:00')).getByText('Cancelado')).toBeInTheDocument();
     expect(screen.queryByText(/Appointment:/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Slot:/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the redesign on existing agenda capabilities and backend contracts only', async () => {
+    listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    mockWeekSlices({
+      '2026-04-08': { slots: [availableSlot('slot-wed', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')] },
+    });
+
+    render(<ScheduleDemo agendaMode={{ kind: 'operational-shared' }} onSessionInvalid={vi.fn()} />);
+
+    expect(await screen.findByRole('heading', { name: 'Agenda semanal operativa' })).toBeInTheDocument();
+    expect(listSlotsMock).toHaveBeenCalledTimes(5);
+    expect(listAppointmentsMock).toHaveBeenCalledTimes(5);
+    expect(createAppointmentMock).not.toHaveBeenCalled();
+    expect(createSlotsBulkMock).not.toHaveBeenCalled();
+    expect(cancelAppointmentMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Reprogramar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ver detalle/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Paciente')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Desde')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar agenda' }));
+
+    await waitFor(() => {
+      expect(listSlotsMock).toHaveBeenCalledTimes(10);
+      expect(listAppointmentsMock).toHaveBeenCalledTimes(10);
+    });
+
+    expect(createAppointmentMock).not.toHaveBeenCalled();
+    expect(createSlotsBulkMock).not.toHaveBeenCalled();
+    expect(cancelAppointmentMock).not.toHaveBeenCalled();
   });
 });
 
