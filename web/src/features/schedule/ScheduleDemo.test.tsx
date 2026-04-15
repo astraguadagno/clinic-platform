@@ -64,6 +64,15 @@ vi.mock('../../api/directory', () => ({
   listProfessionals: listProfessionalsMock,
 }));
 
+vi.mock('./helpers', async () => {
+  const actual = await vi.importActual<typeof import('./helpers')>('./helpers');
+
+  return {
+    ...actual,
+    formatDateInputValue: (date?: Date) => actual.formatDateInputValue(date ?? new Date('2026-04-08T12:00:00Z')),
+  };
+});
+
 describe('ScheduleDemo weekly operational board', () => {
   beforeEach(() => {
     cancelAppointmentMock.mockReset();
