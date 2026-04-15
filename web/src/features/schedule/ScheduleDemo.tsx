@@ -6,6 +6,7 @@ import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolic
 import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import type { Appointment, BulkCreateSlotsPayload, Slot } from '../../types/appointments';
 import type { Patient, Professional } from '../../types/directory';
+import { filterPatients, normalizePatientSearchValue } from '../patient-search/matching';
 import {
   formatDateInputValue,
   formatDateTimeRange,
@@ -18,9 +19,10 @@ import {
 type ScheduleDemoProps = {
   agendaMode: AgendaMode;
   onSessionInvalid: () => void;
+  onOpenDirectorySupport?: () => void;
 };
 
-export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps) {
+export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupport }: ScheduleDemoProps) {
   const initialSelectedDate = mapDateToOperationalWeek(formatDateInputValue());
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -32,6 +34,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
   const [timeBands, setTimeBands] = useState<string[]>([]);
   const [focusedBand, setFocusedBand] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [bookingQuery, setBookingQuery] = useState('');
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isRefreshingAgenda, setIsRefreshingAgenda] = useState(false);
   const [isCreatingSlots, setIsCreatingSlots] = useState(false);
@@ -78,6 +81,11 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
     [professionals, selectedProfessionalId],
   );
   const selectedPatient = useMemo(() => patients.find((patient) => patient.id === selectedPatientId) ?? null, [patients, selectedPatientId]);
+  const filteredBookingPatients = useMemo(() => filterPatients(patients, bookingQuery), [patients, bookingQuery]);
+  const isSelectedPatientHiddenByBookingFilter = useMemo(
+    () => Boolean(selectedPatient && normalizePatientSearchValue(bookingQuery) && !filteredBookingPatients.some((patient) => patient.id === selectedPatient.id)),
+    [bookingQuery, filteredBookingPatients, selectedPatient],
+  );
   const patientNameById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, `${patient.first_name} ${patient.last_name}`])),
     [patients],
@@ -322,6 +330,13 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
   const selectedDayLongLabel = selectedWeekDay ? formatLongDate(selectedWeekDay.date) : 'Elegí un día del tablero para operar.';
   const isBookActionDisabled = isBootstrapping || isRefreshingAgenda || isBooking || !selectedSlotId;
   const isGenerateActionDisabled = isBootstrapping || isRefreshingAgenda || isCreatingSlots || !selectedProfessionalId || !selectedDate;
+  const canOpenDirectorySupport = agendaMode.kind === 'operational-shared' && Boolean(onOpenDirectorySupport);
+  const isMissingOperationalSetup = agendaMode.kind === 'operational-shared' && !isBootstrapping && (professionals.length === 0 || patients.length === 0);
+  const missingOperationalSetupLabel = professionals.length === 0 && patients.length === 0
+    ? 'Faltan profesionales y pacientes para operar la agenda.'
+    : professionals.length === 0
+      ? 'Faltan profesionales activos para operar la agenda.'
+      : 'Faltan pacientes activos para poder reservar turnos.';
 
   if (agendaMode.kind === 'forbidden') {
     return (
@@ -346,7 +361,9 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
           <div>
             <span className="summary-label">Agenda</span>
             <h2>{selectedProfessional ? `${selectedProfessional.first_name} ${selectedProfessional.last_name}` : 'Sin profesional seleccionado'}</h2>
-            <p className="helper">{selectedProfessional?.specialty ?? 'Elegí un profesional para revisar la agenda visible.'}</p>
+            <p className="helper">
+              {selectedProfessional?.specialty ?? (isDoctorAgenda ? 'Agenda propia fijada por tu asociación profesional.' : 'Elegí un profesional para revisar la agenda visible.')}
+            </p>
           </div>
           <div className="schedule-context-bar-week">
             <span className="badge info">UTC fijo para evitar corrimientos</span>
@@ -394,21 +411,52 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
           <button className="button secondary" type="button" onClick={() => void refreshAgenda()} disabled={isBootstrapping || isRefreshingAgenda}>
             {isRefreshingAgenda ? 'Actualizando...' : 'Actualizar agenda'}
           </button>
-          <button className="button" type="button" onClick={() => setActiveModal('book')} disabled={isBookActionDisabled}>
+          <button
+            className="button"
+            type="button"
+            onClick={() => {
+              setBookingQuery('');
+              setActiveModal('book');
+            }}
+            disabled={isBookActionDisabled}
+          >
             {isBooking ? 'Reservando...' : 'Reservar turno'}
           </button>
           <button className="button schedule-generator-button" type="button" onClick={() => setActiveModal('generate')} disabled={isGenerateActionDisabled}>
             {isCreatingSlots ? 'Generando...' : 'Generar slots'}
           </button>
         </div>
+
+        {isDoctorAgenda ? (
+          <div className="inline-note">
+            <strong>Agenda clínica propia</strong>
+            <span>Este tablero queda amarrado a tu professional_id y no expone agenda compartida.</span>
+          </div>
+        ) : null}
+
+        {isMissingOperationalSetup ? (
+          <div className="inline-note inline-note-error">
+            <strong>{missingOperationalSetupLabel}</strong>
+            <span>Usá el soporte de directorio para cargar la base mínima sin convertir esta vista en una configuración completa.</span>
+            {canOpenDirectorySupport ? (
+              <button className="button secondary" type="button" onClick={onOpenDirectorySupport}>
+                Abrir soporte de directorio
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </SectionCard>
 
       <section className="card stack schedule-board-shell">
         <div className="schedule-board-header">
           <div>
             <span className="summary-label">Tablero</span>
-            <h2>Agenda semanal operativa</h2>
-            <p>{selectedProfessional ? `${selectedProfessional.first_name} ${selectedProfessional.last_name} · tablero operativo de lunes a viernes.` : 'Seleccioná un profesional para ver disponibilidad.'}</p>
+            <h2>{isDoctorAgenda ? 'Agenda semanal propia' : 'Agenda semanal operativa'}</h2>
+            <p>
+              {selectedProfessional
+                ? `${selectedProfessional.first_name} ${selectedProfessional.last_name} · ${isDoctorAgenda ? 'tablero clínico propio de lunes a viernes.' : 'tablero operativo de lunes a viernes.'}`
+                : 'Seleccioná un profesional para ver disponibilidad.'}
+            </p>
           </div>
           <div className="schedule-board-toolbar">
             <div className="inline-note">
@@ -558,28 +606,70 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid }: ScheduleDemoProps
             {activeModal === 'book' ? (
               <>
                 <div className="field">
-                  <label htmlFor="patient">Paciente</label>
-                  <select id="patient" value={selectedPatientId} onChange={(event) => setSelectedPatientId(event.target.value)} disabled={isBootstrapping || patients.length === 0}>
-                    {patients.length === 0 ? <option value="">No hay pacientes</option> : null}
-                    {patients.map((patient) => (
-                      <option key={patient.id} value={patient.id}>
-                        {patient.first_name} {patient.last_name} · doc {patient.document}
-                      </option>
-                    ))}
-                  </select>
+                  <label htmlFor="booking-patient-search">Buscar paciente</label>
+                  <input
+                    id="booking-patient-search"
+                    type="search"
+                    value={bookingQuery}
+                    onChange={(event) => setBookingQuery(event.target.value)}
+                    placeholder="Nombre o documento"
+                    disabled={isBootstrapping || patients.length === 0}
+                  />
                 </div>
+
+                {patients.length === 0 ? (
+                  <div className="empty-state empty-state-soft">No hay pacientes activos para reservar.</div>
+                ) : filteredBookingPatients.length === 0 ? (
+                  <div className="empty-state empty-state-soft" aria-live="polite">
+                    <strong>No encontramos pacientes para “{bookingQuery.trim()}”.</strong>
+                    <span>Probá con nombre o documento.</span>
+                  </div>
+                ) : (
+                  <div className="list compact-list patient-selector-list" aria-label="Resultados de pacientes">
+                    {filteredBookingPatients.map((patient) => {
+                      const isSelected = patient.id === selectedPatientId;
+
+                      return (
+                        <button
+                          key={patient.id}
+                          className={`patient-selector-card${isSelected ? ' selected' : ''}`}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => setSelectedPatientId(patient.id)}
+                        >
+                          <span className="surface-tab-eyebrow">Paciente</span>
+                          <strong>
+                            {patient.first_name} {patient.last_name}
+                          </strong>
+                          <small>Documento {patient.document}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="inline-note" aria-live="polite">
                   <strong>{selectedSlotLabel}</strong>
                   <span>
                     {selectedSlot
-                      ? `Paciente listo para reservar: ${selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name}` : 'seleccioná un paciente'}.`
+                      ? selectedPatient
+                        ? isSelectedPatientHiddenByBookingFilter
+                          ? `Paciente seleccionado: ${selectedPatient.first_name} ${selectedPatient.last_name}. No aparece en estos resultados por el filtro actual.`
+                          : `Paciente listo para reservar: ${selectedPatient.first_name} ${selectedPatient.last_name}.`
+                        : 'Seleccioná un paciente.'
                       : 'Seleccioná un horario desde la grilla de disponibilidad para continuar.'}
                   </span>
                 </div>
 
                 <div className="schedule-modal-actions">
-                  <button className="button ghost" type="button" onClick={() => setActiveModal(null)}>
+                  <button
+                    className="button ghost"
+                    type="button"
+                    onClick={() => {
+                      setBookingQuery('');
+                      setActiveModal(null);
+                    }}
+                  >
                     Cancelar
                   </button>
                   <button className="button" type="button" onClick={() => void handleBookAppointment()} disabled={isBootstrapping || isRefreshingAgenda || isBooking || !selectedSlotId || !selectedPatientId}>

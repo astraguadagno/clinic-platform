@@ -64,6 +64,15 @@ vi.mock('../../api/directory', () => ({
   listProfessionals: listProfessionalsMock,
 }));
 
+vi.mock('./helpers', async () => {
+  const actual = await vi.importActual<typeof import('./helpers')>('./helpers');
+
+  return {
+    ...actual,
+    formatDateInputValue: (date?: Date) => actual.formatDateInputValue(date ?? new Date('2026-04-08T12:00:00Z')),
+  };
+});
+
 describe('ScheduleDemo weekly operational board', () => {
   beforeEach(() => {
     cancelAppointmentMock.mockReset();
@@ -122,6 +131,7 @@ describe('ScheduleDemo weekly operational board', () => {
     expect((await screen.findAllByText('Lun 06/04')).length).toBeGreaterThan(0);
 
     expect(screen.queryByRole('combobox', { name: 'Profesional' })).not.toBeInTheDocument();
+    expect(screen.getByText(/agenda clínica propia/i)).toBeInTheDocument();
     expect(listSlotsMock).toHaveBeenCalledTimes(5);
     expect(listSlotsMock.mock.calls.map(([filters]) => filters)).toEqual([
       { professional_id: 'professional-1', date: '2026-04-06' },
@@ -130,6 +140,28 @@ describe('ScheduleDemo weekly operational board', () => {
       { professional_id: 'professional-1', date: '2026-04-09' },
       { professional_id: 'professional-1', date: '2026-04-10' },
     ]);
+  });
+
+  it('offers secretary a hidden directory support entry when setup data is missing', async () => {
+    listProfessionalsMock.mockResolvedValue({ items: [] });
+    listPatientsMock.mockResolvedValue({ items: [] });
+    mockWeekSlices({});
+
+    const onOpenDirectorySupport = vi.fn();
+
+    render(
+      <ScheduleDemo
+        agendaMode={{ kind: 'operational-shared' }}
+        onSessionInvalid={vi.fn()}
+        onOpenDirectorySupport={onOpenDirectorySupport}
+      />,
+    );
+
+    expect(await screen.findByText(/faltan profesionales y pacientes para operar la agenda/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /abrir soporte de directorio/i }));
+
+    expect(onOpenDirectorySupport).toHaveBeenCalledTimes(1);
   });
 
   it('shows a monday-friday weekly board with explicit empty weekdays', async () => {
@@ -194,7 +226,7 @@ describe('ScheduleDemo weekly operational board', () => {
 
   it('opens booking through a modal launched from the selected slot context', async () => {
     listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
-    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientsMock.mockResolvedValue({ items: [activePatient(), secondPatient()] });
     mockWeekRefreshes([
       {
         '2026-04-08': {
@@ -235,15 +267,18 @@ describe('ScheduleDemo weekly operational board', () => {
 
     const bookingDialog = await screen.findByRole('dialog', { name: /Reservar turno/i });
 
-    expect(within(bookingDialog).getByLabelText('Paciente')).toBeInTheDocument();
+    expect(within(bookingDialog).getByLabelText('Buscar paciente')).toBeInTheDocument();
     expect(within(bookingDialog).getByText(/Mié 08\/04/i)).toBeInTheDocument();
+
+    fireEvent.change(within(bookingDialog).getByLabelText('Buscar paciente'), { target: { value: 'maria' } });
+    fireEvent.click(within(bookingDialog).getByRole('button', { name: /María Gómez/i }));
 
     fireEvent.click(within(bookingDialog).getByRole('button', { name: 'Confirmar reserva' }));
 
     await waitFor(() => {
       expect(createAppointmentMock).toHaveBeenCalledWith({
         slot_id: 'slot-2',
-        patient_id: 'patient-1',
+        patient_id: 'patient-2',
         professional_id: 'professional-1',
       });
     });
@@ -254,6 +289,37 @@ describe('ScheduleDemo weekly operational board', () => {
     });
     expect(await screen.findByText('Juan Pérez')).toBeInTheDocument();
     expect(screen.getByText('Reservado')).toBeInTheDocument();
+  });
+
+  it('keeps the selected booking patient when the filter hides it and shows the empty-results state', async () => {
+    listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
+    listPatientsMock.mockResolvedValue({ items: [activePatient(), secondPatient()] });
+    mockWeekSlices({
+      '2026-04-08': { slots: [availableSlot('slot-2', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')] },
+    });
+
+    render(<ScheduleDemo agendaMode={{ kind: 'operational-shared' }} onSessionInvalid={vi.fn()} />);
+
+    fireEvent.click((await screen.findAllByRole('button', { name: /Mié 08\/04/i }))[0]);
+    fireEvent.click(await screen.findByRole('button', { name: /Mié 08\/04 .*10:00 - 10:30 UTC/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar turno' }));
+
+    const bookingDialog = await screen.findByRole('dialog', { name: /Reservar turno/i });
+    const searchInput = within(bookingDialog).getByLabelText('Buscar paciente');
+
+    fireEvent.change(searchInput, { target: { value: 'maria' } });
+    fireEvent.click(within(bookingDialog).getByRole('button', { name: /María Gómez/i }));
+
+    fireEvent.change(searchInput, { target: { value: 'juan' } });
+
+    expect(within(bookingDialog).getByText(/Paciente seleccionado: María Gómez. No aparece en estos resultados por el filtro actual./i)).toBeInTheDocument();
+    expect(within(bookingDialog).queryByRole('button', { name: /María Gómez/i })).not.toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'zzzz' } });
+
+    expect(within(bookingDialog).getByText(/No encontramos pacientes para “zzzz”./i)).toBeInTheDocument();
+    expect(within(bookingDialog).getByText(/Probá con nombre o documento./i)).toBeInTheDocument();
+    expect(within(bookingDialog).getByText(/Paciente seleccionado: María Gómez. No aparece en estos resultados por el filtro actual./i)).toBeInTheDocument();
   });
 
   it('opens slot generation through a modal bound to the selected day', async () => {
@@ -477,6 +543,21 @@ function activePatient() {
     birth_date: '1990-01-01',
     phone: '555-1234',
     email: 'juan@example.com',
+    active: true,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+}
+
+function secondPatient() {
+  return {
+    id: 'patient-2',
+    first_name: 'María',
+    last_name: 'Gómez',
+    document: '20999111',
+    birth_date: '1991-02-02',
+    phone: '555-9876',
+    email: 'maria@example.com',
     active: true,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

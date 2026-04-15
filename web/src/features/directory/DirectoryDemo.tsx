@@ -36,6 +36,8 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
   const [errorMessage, setErrorMessage] = useState('');
   const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const isAdminSetup = directoryMode.kind === 'setup-admin';
+  const isSecretarySupport = directoryMode.kind === 'setup-secretary-support';
 
   const handleApiFailure = useCallback(
     (error: unknown, fallbackMessage: string, forbiddenFallbackMessage: string) => {
@@ -142,12 +144,16 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
         <div className="status-bar">
           <span className="badge neutral">Pacientes: {patients.length}</span>
           <span className="badge neutral">Profesionales: {professionals.length}</span>
-          <span className="badge info">Superficie de configuración liviana</span>
+          <span className="badge info">{isAdminSetup ? 'Superficie de puesta a punto' : 'Superficie de soporte operativo'}</span>
           {successMessage ? <span className="badge success">{successMessage}</span> : null}
           {errorMessage ? <span className="badge error">{errorMessage}</span> : null}
           {accessDeniedMessage ? <span className="badge error">Acceso denegado: {accessDeniedMessage}</span> : null}
         </div>
-        <div className="inline-note">Alta rápida y listados claros para poblar la demo sin mezclar esta superficie con la operación diaria.</div>
+        <div className="inline-note">
+          {isAdminSetup
+            ? 'Alta rápida y listados claros para dejar la base operativa lista antes de usar la demo.'
+            : 'Soporte puntual para cargar pacientes y consultar profesionales sin abrir configuración completa.'}
+        </div>
       </SectionCard>
 
       <div className="directory-grid">
@@ -155,7 +161,11 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
           <div className="section-header">
             <div>
               <h3>Pacientes</h3>
-              <p>Formulario corto para cargar personas reales del demo y verlas enseguida en la lista.</p>
+              <p>
+                {isAdminSetup
+                  ? 'Formulario corto para dejar pacientes listos antes de la operación.'
+                  : 'Alta rápida para destrabar agenda y selección de pacientes cuando falta base operativa.'}
+              </p>
             </div>
             <span className="badge neutral">{patients.length} total</span>
           </div>
@@ -222,7 +232,9 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
             <button className="button" type="button" onClick={() => void handleCreatePatient()} disabled={isBootstrapping || isCreatingPatient}>
               {isCreatingPatient ? 'Guardando...' : 'Crear paciente'}
             </button>
-            <span className="helper helper-inline">Ideal para poblar rápido la agenda demo.</span>
+            <span className="helper helper-inline">
+              {isAdminSetup ? 'Ideal para poblar rápido agenda y pacientes.' : 'Disponible como ayuda operativa cuando falta un paciente.'}
+            </span>
           </div>
 
           {isBootstrapping ? (
@@ -257,51 +269,61 @@ export function DirectoryDemo({ directoryMode, onSessionInvalid }: DirectoryDemo
           <div className="section-header">
             <div>
               <h3>Profesionales</h3>
-              <p>Bloque liviano para cargar especialidades y dejar lista la agenda con datos de verdad.</p>
+              <p>
+                {isAdminSetup
+                  ? 'Bloque liviano para cargar especialidades y dejar lista la agenda con datos de verdad.'
+                  : 'Listado de referencia para operaciones compartidas. La creación queda reservada a administración.'}
+              </p>
             </div>
             <span className="badge neutral">{professionals.length} total</span>
           </div>
 
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="professional-first-name">Nombre</label>
-              <input
-                id="professional-first-name"
-                value={professionalForm.first_name}
-                onChange={(event) => setProfessionalForm((current) => ({ ...current, first_name: event.target.value }))}
-              />
-            </div>
+          {isAdminSetup ? (
+            <>
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="professional-first-name">Nombre</label>
+                  <input
+                    id="professional-first-name"
+                    value={professionalForm.first_name}
+                    onChange={(event) => setProfessionalForm((current) => ({ ...current, first_name: event.target.value }))}
+                  />
+                </div>
 
-            <div className="field">
-              <label htmlFor="professional-last-name">Apellido</label>
-              <input
-                id="professional-last-name"
-                value={professionalForm.last_name}
-                onChange={(event) => setProfessionalForm((current) => ({ ...current, last_name: event.target.value }))}
-              />
-            </div>
+                <div className="field">
+                  <label htmlFor="professional-last-name">Apellido</label>
+                  <input
+                    id="professional-last-name"
+                    value={professionalForm.last_name}
+                    onChange={(event) => setProfessionalForm((current) => ({ ...current, last_name: event.target.value }))}
+                  />
+                </div>
 
-            <div className="field form-grid-span-full">
-              <label htmlFor="professional-specialty">Especialidad</label>
-              <input
-                id="professional-specialty"
-                value={professionalForm.specialty}
-                onChange={(event) => setProfessionalForm((current) => ({ ...current, specialty: event.target.value }))}
-              />
-            </div>
-          </div>
+                <div className="field form-grid-span-full">
+                  <label htmlFor="professional-specialty">Especialidad</label>
+                  <input
+                    id="professional-specialty"
+                    value={professionalForm.specialty}
+                    onChange={(event) => setProfessionalForm((current) => ({ ...current, specialty: event.target.value }))}
+                  />
+                </div>
+              </div>
 
-          <div className="toolbar">
-            <button
-              className="button"
-              type="button"
-              onClick={() => void handleCreateProfessional()}
-              disabled={isBootstrapping || isCreatingProfessional}
-            >
-              {isCreatingProfessional ? 'Guardando...' : 'Crear profesional'}
-            </button>
-            <span className="helper helper-inline">Después lo vas a poder elegir en Agenda.</span>
-          </div>
+              <div className="toolbar">
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => void handleCreateProfessional()}
+                  disabled={isBootstrapping || isCreatingProfessional}
+                >
+                  {isCreatingProfessional ? 'Guardando...' : 'Crear profesional'}
+                </button>
+                <span className="helper helper-inline">Después lo vas a poder elegir en Agenda.</span>
+              </div>
+            </>
+          ) : (
+            <div className="inline-note">Podés consultar profesionales ya cargados, pero el alta de profesionales sigue siendo una tarea de administración.</div>
+          )}
 
           {isBootstrapping ? (
             <div className="empty-state empty-state-soft">Cargando profesionales...</div>
