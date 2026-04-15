@@ -25,15 +25,32 @@ describe('DirectoryDemo', () => {
     createProfessionalMock.mockReset();
   });
 
-  it('renders setup data for allowed actors', async () => {
+  it('renders admin setup data with patient and professional creation', async () => {
     listPatientsMock.mockResolvedValue({ items: [activePatient()] });
     listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
 
-    render(<DirectoryDemo directoryMode={{ kind: 'setup-shared' }} onSessionInvalid={vi.fn()} />);
+    render(<DirectoryDemo directoryMode={{ kind: 'setup-admin' }} onSessionInvalid={vi.fn()} />);
 
-    expect(await screen.findByText(/superficie de configuración liviana/i)).toBeInTheDocument();
+    expect(await screen.findByText(/superficie de puesta a punto/i)).toBeInTheDocument();
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
     expect(screen.getByText('Ana Médica')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /crear paciente/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /crear profesional/i })).toBeInTheDocument();
+  });
+
+  it('keeps secretary support narrowed to patient creation plus professional listing', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
+
+    render(<DirectoryDemo directoryMode={{ kind: 'setup-secretary-support' }} onSessionInvalid={vi.fn()} />);
+
+    expect(await screen.findByText(/superficie de soporte operativo/i)).toBeInTheDocument();
+    expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
+    expect(screen.getByText('Ana Médica')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /crear paciente/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /crear profesional/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Nombre', { selector: '#professional-first-name' })).not.toBeInTheDocument();
+    expect(screen.getByText(/la creación queda reservada a administración/i)).toBeInTheDocument();
   });
 
   it('invalidates the session on 401 directory bootstrap failures', async () => {
@@ -41,7 +58,7 @@ describe('DirectoryDemo', () => {
     listProfessionalsMock.mockResolvedValue({ items: [] });
     const onSessionInvalid = vi.fn();
 
-    render(<DirectoryDemo directoryMode={{ kind: 'setup-shared' }} onSessionInvalid={onSessionInvalid} />);
+    render(<DirectoryDemo directoryMode={{ kind: 'setup-admin' }} onSessionInvalid={onSessionInvalid} />);
 
     await waitFor(() => {
       expect(onSessionInvalid).toHaveBeenCalledTimes(1);
@@ -53,7 +70,7 @@ describe('DirectoryDemo', () => {
     listProfessionalsMock.mockResolvedValue({ items: [] });
     const onSessionInvalid = vi.fn();
 
-    render(<DirectoryDemo directoryMode={{ kind: 'setup-shared' }} onSessionInvalid={onSessionInvalid} />);
+    render(<DirectoryDemo directoryMode={{ kind: 'setup-secretary-support' }} onSessionInvalid={onSessionInvalid} />);
 
     expect(await screen.findByText('Acceso denegado: No podés abrir el directorio.')).toBeInTheDocument();
     expect(onSessionInvalid).not.toHaveBeenCalled();

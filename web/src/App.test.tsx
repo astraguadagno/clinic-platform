@@ -15,11 +15,33 @@ vi.mock('./features/auth/LoginScreen', () => ({
 }));
 
 vi.mock('./features/schedule/ScheduleDemo', () => ({
-  ScheduleDemo: ({ agendaMode }: { agendaMode: { kind: string } }) => <div>schedule:{agendaMode.kind}</div>,
+  ScheduleDemo: ({
+    agendaMode,
+    onOpenDirectorySupport,
+  }: {
+    agendaMode: { kind: string };
+    onOpenDirectorySupport?: () => void;
+  }) => (
+    <div>
+      <div>schedule:{agendaMode.kind}</div>
+      {onOpenDirectorySupport ? <button onClick={onOpenDirectorySupport}>schedule-open-directory</button> : null}
+    </div>
+  ),
 }));
 
 vi.mock('./features/patients/PatientsWorkspace', () => ({
-  PatientsWorkspace: ({ patientsMode }: { patientsMode: { kind: string } }) => <div>patients:{patientsMode.kind}</div>,
+  PatientsWorkspace: ({
+    patientsMode,
+    onOpenDirectorySupport,
+  }: {
+    patientsMode: { kind: string };
+    onOpenDirectorySupport?: () => void;
+  }) => (
+    <div>
+      <div>patients:{patientsMode.kind}</div>
+      {onOpenDirectorySupport ? <button onClick={onOpenDirectorySupport}>patients-open-directory</button> : null}
+    </div>
+  ),
 }));
 
 vi.mock('./features/directory/DirectoryDemo', () => ({
@@ -41,9 +63,9 @@ describe('App actor-aware shell', () => {
     expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
     const doctorNavButtons = screen.getAllByRole('button', { name: /Agenda|Pacientes/ });
     expect(doctorNavButtons).toHaveLength(2);
-    expect(doctorNavButtons[0]).toHaveTextContent('Operación clínica');
+    expect(doctorNavButtons[0]).toHaveTextContent('Práctica propia');
     expect(doctorNavButtons[0]).toHaveTextContent('Agenda');
-    expect(doctorNavButtons[1]).toHaveTextContent('Relación asistencial');
+    expect(doctorNavButtons[1]).toHaveTextContent('Seguimiento clínico');
     expect(doctorNavButtons[1]).toHaveTextContent('Pacientes');
     expect(screen.getByRole('button', { name: /Agenda/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('schedule:doctor-own')).toBeInTheDocument();
@@ -65,10 +87,13 @@ describe('App actor-aware shell', () => {
 
     const secretaryNavButtons = screen.getAllByRole('button', { name: /Agenda|Pacientes/ });
     expect(secretaryNavButtons).toHaveLength(2);
+    expect(secretaryNavButtons[0]).toHaveTextContent('Operación diaria');
+    expect(secretaryNavButtons[1]).toHaveTextContent('Atención operativa');
     expect(secretaryNavButtons[0]).toHaveTextContent('Agenda');
     expect(secretaryNavButtons[1]).toHaveTextContent('Pacientes');
     expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
     expect(screen.getByText('schedule:operational-shared')).toBeInTheDocument();
+    expect(screen.queryByText('directory:setup-secretary-support')).not.toBeInTheDocument();
   });
 
   it('keeps the unauthenticated login surface unchanged', () => {
@@ -115,10 +140,25 @@ describe('App actor-aware shell', () => {
 
     expect(screen.getByRole('navigation', { name: 'Áreas disponibles' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Directorio/ })).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: /Directorio/ })[0]).toHaveTextContent('Base operativa');
+    expect(screen.getAllByRole('button', { name: /Directorio/ })[0]).toHaveTextContent('Puesta a punto');
     expect(screen.getAllByRole('button', { name: /Directorio/ })[0]).toHaveTextContent('Directorio');
     expect(screen.getByRole('heading', { name: 'Directorio' })).toBeInTheDocument();
-    expect(screen.getByText('directory:setup-shared')).toBeInTheDocument();
+    expect(screen.getByText('directory:setup-admin')).toBeInTheDocument();
+  });
+
+  it('lets secretary reach hidden directory support without adding sidebar symmetry', () => {
+    useAuthSessionMock.mockReturnValue(authSession({ role: 'secretary' }));
+
+    render(<App />);
+
+    expect(screen.getAllByRole('button', { name: /Agenda|Pacientes/ })).toHaveLength(2);
+    expect(screen.queryByText('directory:setup-secretary-support')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'schedule-open-directory' }));
+
+    expect(screen.getByText('directory:setup-secretary-support')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Agenda|Pacientes/ })).toHaveLength(2);
+    expect(screen.queryAllByRole('button', { name: /Directorio/ })).toHaveLength(0);
   });
 
   it('keeps authenticated shell navigation unchanged under the polished copy', () => {
@@ -176,7 +216,7 @@ describe('App actor-aware shell', () => {
 
     expect(screen.getAllByRole('button', { name: /Directorio/ })).toHaveLength(1);
     expect(screen.getByRole('button', { name: /Directorio/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('directory:setup-shared')).toBeInTheDocument();
+    expect(screen.getByText('directory:setup-admin')).toBeInTheDocument();
     expect(screen.queryByText('patients:doctor-clinical')).not.toBeInTheDocument();
   });
 });

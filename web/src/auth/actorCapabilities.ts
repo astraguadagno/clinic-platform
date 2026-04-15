@@ -12,7 +12,10 @@ export type PatientsMode =
   | { kind: 'secretary-operational' }
   | { kind: 'forbidden'; message: string };
 
-export type DirectoryMode = { kind: 'setup-shared' } | { kind: 'forbidden'; message: string };
+export type DirectoryMode =
+  | { kind: 'setup-admin' }
+  | { kind: 'setup-secretary-support' }
+  | { kind: 'forbidden'; message: string };
 
 export type ShellNavItem = {
   id: SurfaceId;
@@ -34,6 +37,7 @@ export type ShellSurfaceMetadata = {
 
 export type ActorCapabilities = {
   visibleSurfaces: SurfaceId[];
+  supportSurfaces: SurfaceId[];
   defaultSurface: SurfaceId;
   agendaMode: AgendaMode;
   patientsMode: PatientsMode;
@@ -43,48 +47,6 @@ export type ActorCapabilities = {
 const DOCTOR_ASSOCIATION_MESSAGE = 'Tu usuario doctor no tiene professional_id asociado.';
 const ROLE_ACCESS_MESSAGE = 'Tu rol no tiene acceso a esta superficie.';
 
-const SHELL_SURFACE_COPY: Record<SurfaceId, ShellSurfaceMetadata> = {
-  agenda: {
-    navItem: {
-      id: 'agenda',
-      label: 'Agenda',
-      eyebrow: 'Operación clínica',
-      description: 'Turnos del día.',
-    },
-    intro: {
-      eyebrow: 'Operación clínica',
-      title: 'Agenda',
-      description: 'Turnos y disponibilidad en una sola vista.',
-    },
-  },
-  patients: {
-    navItem: {
-      id: 'patients',
-      label: 'Pacientes',
-      eyebrow: 'Relación asistencial',
-      description: 'Seguimiento activo.',
-    },
-    intro: {
-      eyebrow: 'Relación asistencial',
-      title: 'Pacientes',
-      description: 'Seguimiento clínico del panel activo.',
-    },
-  },
-  directory: {
-    navItem: {
-      id: 'directory',
-      label: 'Directorio',
-      eyebrow: 'Base operativa',
-      description: 'Base operativa.',
-    },
-    intro: {
-      eyebrow: 'Base operativa',
-      title: 'Directorio',
-      description: 'Personas y equipos disponibles.',
-    },
-  },
-};
-
 export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
   const professionalId = user.professional_id?.trim() ?? '';
 
@@ -92,6 +54,7 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
     if (!professionalId) {
       return {
         visibleSurfaces: ['agenda', 'patients'],
+        supportSurfaces: [],
         defaultSurface: 'agenda',
         agendaMode: { kind: 'forbidden', message: DOCTOR_ASSOCIATION_MESSAGE },
         patientsMode: { kind: 'forbidden', message: DOCTOR_ASSOCIATION_MESSAGE },
@@ -101,6 +64,7 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
 
     return {
       visibleSurfaces: ['agenda', 'patients'],
+      supportSurfaces: [],
       defaultSurface: 'agenda',
       agendaMode: { kind: 'doctor-own', professionalId },
       patientsMode: { kind: 'doctor-clinical', professionalId },
@@ -111,25 +75,28 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
   if (user.role === 'secretary') {
     return {
       visibleSurfaces: ['agenda', 'patients'],
+      supportSurfaces: ['directory'],
       defaultSurface: 'agenda',
       agendaMode: { kind: 'operational-shared' },
       patientsMode: { kind: 'secretary-operational' },
-      directoryMode: { kind: 'setup-shared' },
+      directoryMode: { kind: 'setup-secretary-support' },
     };
   }
 
   if (user.role === 'admin') {
     return {
       visibleSurfaces: ['directory'],
+      supportSurfaces: [],
       defaultSurface: 'directory',
       agendaMode: { kind: 'forbidden', message: ROLE_ACCESS_MESSAGE },
       patientsMode: { kind: 'forbidden', message: ROLE_ACCESS_MESSAGE },
-      directoryMode: { kind: 'setup-shared' },
+      directoryMode: { kind: 'setup-admin' },
     };
   }
 
   return {
     visibleSurfaces: ['agenda'],
+    supportSurfaces: [],
     defaultSurface: 'agenda',
     agendaMode: { kind: 'forbidden', message: ROLE_ACCESS_MESSAGE },
     patientsMode: { kind: 'forbidden', message: ROLE_ACCESS_MESSAGE },
@@ -139,7 +106,147 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
 
 export function resolveShellSurfaceMetadata(
   surfaceId: SurfaceId,
-  _capabilities: ActorCapabilities,
+  capabilities: ActorCapabilities,
 ): ShellSurfaceMetadata {
-  return SHELL_SURFACE_COPY[surfaceId];
+  if (surfaceId === 'agenda') {
+    if (capabilities.agendaMode.kind === 'doctor-own') {
+      return {
+        navItem: {
+          id: 'agenda',
+          label: 'Agenda',
+          eyebrow: 'Práctica propia',
+          description: 'Turnos de tu consultorio.',
+        },
+        intro: {
+          eyebrow: 'Práctica propia',
+          title: 'Agenda',
+          description: 'Turnos y disponibilidad vinculados a tu professional_id.',
+        },
+      };
+    }
+
+    if (capabilities.agendaMode.kind === 'operational-shared') {
+      return {
+        navItem: {
+          id: 'agenda',
+          label: 'Agenda',
+          eyebrow: 'Operación diaria',
+          description: 'Turnos y coordinación.',
+        },
+        intro: {
+          eyebrow: 'Operación diaria',
+          title: 'Agenda',
+          description: 'Coordinación de turnos con foco operativo y sin trabajo clínico.',
+        },
+      };
+    }
+
+    return {
+      navItem: {
+        id: 'agenda',
+        label: 'Agenda',
+        eyebrow: 'Acceso restringido',
+        description: 'Superficie bloqueada.',
+      },
+      intro: {
+        eyebrow: 'Acceso restringido',
+        title: 'Agenda',
+        description: 'Esta superficie queda visible solo para comunicar el bloqueo actual.',
+      },
+    };
+  }
+
+  if (surfaceId === 'patients') {
+    if (capabilities.patientsMode.kind === 'doctor-clinical') {
+      return {
+        navItem: {
+          id: 'patients',
+          label: 'Pacientes',
+          eyebrow: 'Seguimiento clínico',
+          description: 'Panel de tus pacientes.',
+        },
+        intro: {
+          eyebrow: 'Seguimiento clínico',
+          title: 'Pacientes',
+          description: 'Resumen y encounters del panel clínico asociado a tu práctica.',
+        },
+      };
+    }
+
+    if (capabilities.patientsMode.kind === 'secretary-operational') {
+      return {
+        navItem: {
+          id: 'patients',
+          label: 'Pacientes',
+          eyebrow: 'Atención operativa',
+          description: 'Búsqueda y resumen.',
+        },
+        intro: {
+          eyebrow: 'Atención operativa',
+          title: 'Pacientes',
+          description: 'Selección y verificación de datos sin exponer trabajo clínico.',
+        },
+      };
+    }
+
+    return {
+      navItem: {
+        id: 'patients',
+        label: 'Pacientes',
+        eyebrow: 'Acceso restringido',
+        description: 'Superficie bloqueada.',
+      },
+      intro: {
+        eyebrow: 'Acceso restringido',
+        title: 'Pacientes',
+        description: 'Esta superficie queda visible solo para comunicar el bloqueo actual.',
+      },
+    };
+  }
+
+  if (capabilities.directoryMode.kind === 'setup-admin') {
+    return {
+      navItem: {
+        id: 'directory',
+        label: 'Directorio',
+        eyebrow: 'Puesta a punto',
+        description: 'Pacientes y profesionales.',
+      },
+      intro: {
+        eyebrow: 'Puesta a punto',
+        title: 'Directorio',
+        description: 'Base de preparación para dejar agenda y pacientes listos antes de operar.',
+      },
+    };
+  }
+
+  if (capabilities.directoryMode.kind === 'setup-secretary-support') {
+    return {
+      navItem: {
+        id: 'directory',
+        label: 'Directorio',
+        eyebrow: 'Soporte operativo',
+        description: 'Pacientes y consulta de profesionales.',
+      },
+      intro: {
+        eyebrow: 'Soporte operativo',
+        title: 'Directorio',
+        description: 'Soporte puntual para destrabar agenda y pacientes sin abrir configuración completa.',
+      },
+    };
+  }
+
+  return {
+    navItem: {
+      id: 'directory',
+      label: 'Directorio',
+      eyebrow: 'Acceso restringido',
+      description: 'Superficie bloqueada.',
+    },
+    intro: {
+      eyebrow: 'Acceso restringido',
+      title: 'Directorio',
+      description: 'Esta superficie no forma parte del alcance disponible para tu rol.',
+    },
+  };
 }

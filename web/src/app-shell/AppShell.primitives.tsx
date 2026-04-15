@@ -39,7 +39,7 @@ export function EmptyState({ eyebrow, title, description, className }: EmptyStat
   return (
     <section className={joinClasses('foundation-empty-state empty-state', className)}>
       {eyebrow ? <span className="hero-kicker">{eyebrow}</span> : null}
-      <strong>{title}</strong>
+      <h2>{title}</h2>
       {description ? <span>{description}</span> : null}
     </section>
   );

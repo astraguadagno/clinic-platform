@@ -13,7 +13,7 @@ export default function App() {
     () => (auth.user ? deriveActorCapabilities(auth.user) : null),
     [auth.user],
   );
-  const availableSurfaces = useMemo(
+  const visibleSurfaces = useMemo(
     () =>
       capabilities
         ? capabilities.visibleSurfaces.map((surface) => ({
@@ -21,6 +21,10 @@ export default function App() {
             ...resolveShellSurfaceMetadata(surface, capabilities),
           }))
         : [],
+    [capabilities],
+  );
+  const reachableSurfaceIds = useMemo(
+    () => (capabilities ? [...new Set([...capabilities.visibleSurfaces, ...capabilities.supportSurfaces])] : []),
     [capabilities],
   );
   const [activeSurface, setActiveSurface] = useState<SurfaceId>('agenda');
@@ -31,13 +35,15 @@ export default function App() {
       return;
     }
 
-    if (!capabilities.visibleSurfaces.includes(activeSurface)) {
+    if (!reachableSurfaceIds.includes(activeSurface)) {
       setActiveSurface(capabilities.defaultSurface);
     }
-  }, [activeSurface, capabilities]);
+  }, [activeSurface, capabilities, reachableSurfaceIds]);
 
-  const normalizedActiveSurface = capabilities?.visibleSurfaces.includes(activeSurface) ? activeSurface : capabilities?.defaultSurface;
-  const activeSurfaceDefinition = availableSurfaces.find((surface) => surface.id === normalizedActiveSurface) ?? availableSurfaces[0];
+  const normalizedActiveSurface = reachableSurfaceIds.includes(activeSurface) ? activeSurface : capabilities?.defaultSurface;
+  const activeSurfaceDefinition = normalizedActiveSurface && capabilities
+    ? { id: normalizedActiveSurface, ...resolveShellSurfaceMetadata(normalizedActiveSurface, capabilities) }
+    : visibleSurfaces[0];
 
   if (auth.status === 'loading') {
     return (
@@ -57,13 +63,27 @@ export default function App() {
     return <LoginScreen errorMessage={auth.errorMessage} isSubmitting={auth.isSubmitting} onLogin={auth.login} />;
   }
 
+  const openSupportSurface = (surface: SurfaceId) => {
+    if (!reachableSurfaceIds.includes(surface)) {
+      return;
+    }
+
+    setActiveSurface(surface);
+  };
+
   const renderActiveSurface = () => {
     if (!capabilities) {
       return null;
     }
 
     if (normalizedActiveSurface === 'agenda') {
-      return <ScheduleDemo agendaMode={capabilities.agendaMode} onSessionInvalid={auth.logout} />;
+      return (
+        <ScheduleDemo
+          agendaMode={capabilities.agendaMode}
+          onSessionInvalid={auth.logout}
+          onOpenDirectorySupport={capabilities.supportSurfaces.includes('directory') ? () => openSupportSurface('directory') : undefined}
+        />
+      );
     }
 
     if (normalizedActiveSurface === 'directory') {
@@ -71,7 +91,13 @@ export default function App() {
     }
 
     if (normalizedActiveSurface === 'patients') {
-      return <PatientsWorkspace patientsMode={capabilities.patientsMode} onSessionInvalid={auth.logout} />;
+      return (
+        <PatientsWorkspace
+          patientsMode={capabilities.patientsMode}
+          onSessionInvalid={auth.logout}
+          onOpenDirectorySupport={capabilities.supportSurfaces.includes('directory') ? () => openSupportSurface('directory') : undefined}
+        />
+      );
     }
 
     return null;
@@ -106,7 +132,7 @@ export default function App() {
         ariaLabel: `Contenido de ${activeSurfaceDefinition?.intro.title ?? 'Agenda'}`,
         children: renderActiveSurface(),
       }}
-      navItems={availableSurfaces.map((surface) => surface.navItem)}
+      navItems={visibleSurfaces.map((surface) => surface.navItem)}
       onLogout={auth.logout}
       onSelectSurface={setActiveSurface}
     />

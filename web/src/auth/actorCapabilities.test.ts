@@ -8,6 +8,7 @@ describe('deriveActorCapabilities', () => {
     const patientsShell = resolveShellSurfaceMetadata('patients', capabilities);
 
     expect(capabilities.visibleSurfaces).toEqual(['agenda', 'patients']);
+    expect(capabilities.supportSurfaces).toEqual([]);
     expect(capabilities.defaultSurface).toBe('agenda');
     expect(capabilities.agendaMode).toEqual({ kind: 'doctor-own', professionalId: 'professional-1' });
     expect(capabilities.patientsMode).toEqual({ kind: 'doctor-clinical', professionalId: 'professional-1' });
@@ -15,13 +16,13 @@ describe('deriveActorCapabilities', () => {
     expect(agendaShell.navItem).toEqual({
       id: 'agenda',
       label: 'Agenda',
-      eyebrow: 'Operación clínica',
-      description: 'Turnos del día.',
+      eyebrow: 'Práctica propia',
+      description: 'Turnos de tu consultorio.',
     });
     expect(patientsShell.intro).toEqual({
-      eyebrow: 'Relación asistencial',
+      eyebrow: 'Seguimiento clínico',
       title: 'Pacientes',
-      description: 'Seguimiento clínico del panel activo.',
+      description: 'Resumen y encounters del panel clínico asociado a tu práctica.',
     });
   });
 
@@ -46,21 +47,22 @@ describe('deriveActorCapabilities', () => {
     const directoryShell = resolveShellSurfaceMetadata('directory', capabilities);
 
     expect(capabilities.visibleSurfaces).toEqual(['agenda', 'patients']);
+    expect(capabilities.supportSurfaces).toEqual(['directory']);
     expect(capabilities.defaultSurface).toBe('agenda');
     expect(capabilities.agendaMode).toEqual({ kind: 'operational-shared' });
     expect(capabilities.patientsMode).toEqual({ kind: 'secretary-operational' });
-    expect(capabilities.directoryMode).toEqual({ kind: 'setup-shared' });
+    expect(capabilities.directoryMode).toEqual({ kind: 'setup-secretary-support' });
     expect(agendaShell.navItem.label).toBe('Agenda');
     expect(patientsShell.intro).toEqual({
-      eyebrow: 'Relación asistencial',
+      eyebrow: 'Atención operativa',
       title: 'Pacientes',
-      description: 'Seguimiento clínico del panel activo.',
+      description: 'Selección y verificación de datos sin exponer trabajo clínico.',
     });
     expect(directoryShell.navItem).toEqual({
       id: 'directory',
       label: 'Directorio',
-      eyebrow: 'Base operativa',
-      description: 'Base operativa.',
+      eyebrow: 'Soporte operativo',
+      description: 'Pacientes y consulta de profesionales.',
     });
   });
 
@@ -69,11 +71,16 @@ describe('deriveActorCapabilities', () => {
     const directoryShell = resolveShellSurfaceMetadata('directory', capabilities);
 
     expect(capabilities.visibleSurfaces).toEqual(['directory']);
+    expect(capabilities.supportSurfaces).toEqual([]);
     expect(capabilities.defaultSurface).toBe('directory');
-    expect(capabilities.directoryMode).toEqual({ kind: 'setup-shared' });
+    expect(capabilities.directoryMode).toEqual({ kind: 'setup-admin' });
     expect(capabilities.agendaMode.kind).toBe('forbidden');
     expect(capabilities.patientsMode.kind).toBe('forbidden');
-    expect(directoryShell.intro.title).toBe('Directorio');
+    expect(directoryShell.intro).toEqual({
+      eyebrow: 'Puesta a punto',
+      title: 'Directorio',
+      description: 'Base de preparación para dejar agenda y pacientes listos antes de operar.',
+    });
   });
 
   it('falls back to a blocked agenda-only shell for unknown roles', () => {

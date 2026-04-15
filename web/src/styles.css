@@ -1000,10 +1000,46 @@ button {
   gap: 10px;
 }
 
+.patient-search-combobox {
+  position: relative;
+}
+
+.patient-search-surface {
+  overflow: visible;
+  z-index: 40;
+}
+
+.patient-search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.patient-search-feedback {
+  margin: 0;
+}
+
+.patient-search-results {
+  max-height: min(320px, 50vh);
+  margin: 0;
+  padding-right: 2px;
+}
+
 .patient-selector-card {
   display: grid;
   gap: 4px;
-  padding: 16px;
+  width: 100%;
+  padding: 14px 16px;
   border: 1px solid #dfe6ee;
   border-radius: var(--radius-md);
   background: #fbfcfe;

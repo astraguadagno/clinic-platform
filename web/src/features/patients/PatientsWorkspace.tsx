@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type FocusEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import { type PatientsMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import { createPatientEncounter, listPatientEncounters } from '../../api/clinical';
 import { listPatients } from '../../api/directory';
 import type { CreateEncounterPayload, Encounter, Patient } from '../../types/clinical';
+import { filterPatients, normalizePatientSearchValue } from '../patient-search/matching';
 
 type PatientsWorkspaceProps = {
   patientsMode: PatientsMode;
   onSessionInvalid: () => void;
+  onOpenDirectorySupport?: () => void;
 };
 
 type EncounterFormState = {
@@ -21,10 +23,11 @@ const EMPTY_ENCOUNTER_FORM: EncounterFormState = {
   occurred_at: '',
 };
 
-export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWorkspaceProps) {
+export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirectorySupport }: PatientsWorkspaceProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [encounters, setEncounters] = useState<Encounter[]>([]);
+  const [sidebarQuery, setSidebarQuery] = useState('');
   const [form, setForm] = useState<EncounterFormState>(EMPTY_ENCOUNTER_FORM);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isLoadingEncounters, setIsLoadingEncounters] = useState(false);
@@ -33,10 +36,24 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
   const [encountersError, setEncountersError] = useState('');
   const [formError, setFormError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchControlRef = useRef<HTMLDivElement | null>(null);
 
   const activePatients = useMemo(() => patients.filter((patient) => patient.active), [patients]);
+  const filteredPatients = useMemo(() => filterPatients(activePatients, sidebarQuery), [activePatients, sidebarQuery]);
   const selectedPatient = activePatients.find((patient) => patient.id === selectedPatientId) ?? null;
+  const isSelectedPatientHiddenByFilter = useMemo(
+    () => Boolean(selectedPatient && normalizePatientSearchValue(sidebarQuery) && !filteredPatients.some((patient) => patient.id === selectedPatient.id)),
+    [filteredPatients, selectedPatient, sidebarQuery],
+  );
+  const hasActiveSearchQuery = Boolean(normalizePatientSearchValue(sidebarQuery));
+  const shouldShowSearchDropdown =
+    !isBootstrapping &&
+    activePatients.length > 0 &&
+    isSearchOpen &&
+    (hasActiveSearchQuery || filteredPatients.length > 0 || isSelectedPatientHiddenByFilter);
   const canAccessClinical = patientsMode.kind === 'doctor-clinical';
+  const isSecretaryOperational = patientsMode.kind === 'secretary-operational';
   const clinicalDeniedMessage =
     patientsMode.kind === 'secretary-operational'
       ? 'Este perfil secretaría puede buscar y seleccionar pacientes, pero no ver ni registrar encounters clínicos.'
@@ -126,6 +143,12 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
   }, [bootstrap]);
 
   useEffect(() => {
+    if (isBootstrapping || activePatients.length === 0) {
+      setIsSearchOpen(false);
+    }
+  }, [activePatients.length, isBootstrapping]);
+
+  useEffect(() => {
     setSelectedPatientId((current) => {
       if (current && activePatients.some((patient) => patient.id === current)) {
         return current;
@@ -205,6 +228,19 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
     }
   }
 
+  function handleSearchBlur(event: FocusEvent<HTMLDivElement>) {
+    if (searchControlRef.current?.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+
+    setIsSearchOpen(false);
+  }
+
+  function handlePatientSelection(patientId: string) {
+    setSelectedPatientId(patientId);
+    setIsSearchOpen(false);
+  }
+
   if (patientsMode.kind === 'forbidden') {
     return (
       <PageContainer>
@@ -215,7 +251,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
 
   return (
     <PageContainer className="stack">
-      <SectionCard className="stack">
+      <SectionCard className="stack patient-search-surface">
         <div className="status-bar">
           <span className="badge neutral">Pacientes activos: {activePatients.length}</span>
           <span className="badge neutral">Encounters visibles: {encounters.length}</span>
@@ -225,20 +261,79 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
           {successMessage ? <span className="badge success">{successMessage}</span> : null}
           {patientsError ? <span className="badge error">{patientsError}</span> : null}
         </div>
-        <div className="inline-note">
-          {patientsMode.kind === 'doctor-clinical'
-            ? 'Elegí paciente, revisá encounters y registrá una evolución corta sin inventar una historia clínica completa.'
-            : 'Este cuerpo mantiene foco operativo: búsqueda y selección para secretaría sin habilitar trabajo clínico.'}
-        </div>
-      </SectionCard>
-
-      <div className="patients-workspace-grid">
-        <SectionCard className="stack patients-sidebar">
+        <div className="stack" role="group" aria-label="Buscador de pacientes">
           <div className="section-header">
-            <div>
-              <h3>Pacientes activos</h3>
-              <p>Lista corta para entrar rápido a una atención o resolver la agenda sin meter navegación extra.</p>
+            <div
+              ref={searchControlRef}
+              className="field patient-search-combobox"
+              style={{ flex: 1 }}
+              onFocus={() => setIsSearchOpen(true)}
+              onBlur={handleSearchBlur}
+            >
+              <label htmlFor="patients-sidebar-search">Buscar paciente</label>
+              <input
+                id="patients-sidebar-search"
+                type="search"
+                value={sidebarQuery}
+                onChange={(event) => {
+                  setSidebarQuery(event.target.value);
+                  setIsSearchOpen(true);
+                }}
+                placeholder="Nombre o documento"
+                disabled={isBootstrapping || activePatients.length === 0}
+                autoComplete="off"
+                aria-controls="patients-search-results"
+                aria-autocomplete="list"
+                aria-expanded={shouldShowSearchDropdown}
+                aria-haspopup="listbox"
+              />
+
+              {shouldShowSearchDropdown ? (
+                <div className="patient-search-dropdown" aria-live="polite">
+                  {filteredPatients.length === 0 ? (
+                    <div id="patients-search-results" className="empty-state empty-state-soft patient-search-feedback" role="status">
+                      <strong>No hay pacientes que coincidan con “{sidebarQuery.trim()}”.</strong>
+                      <span>Limpiá el buscador para ver la lista completa.</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="patient-search-feedback inline-note">
+                        <strong>
+                          {hasActiveSearchQuery
+                            ? `${filteredPatients.length} coincidencia${filteredPatients.length === 1 ? '' : 's'} visible${filteredPatients.length === 1 ? '' : 's'}`
+                            : `Pacientes activos disponibles: ${filteredPatients.length}`}
+                        </strong>
+                      </div>
+
+                      <ul id="patients-search-results" className="list compact-list patient-selector-list patient-search-results" role="listbox" aria-label="Resultados de búsqueda de pacientes">
+                        {filteredPatients.map((patient) => {
+                          const isSelected = patient.id === selectedPatientId;
+
+                          return (
+                            <li key={patient.id}>
+                              <button
+                                className={`patient-selector-card${isSelected ? ' selected' : ''}`}
+                                type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => handlePatientSelection(patient.id)}
+                              >
+                                <strong>
+                                  {patient.first_name} {patient.last_name}
+                                </strong>
+                                <small>Documento {patient.document}</small>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              ) : null}
             </div>
+
             <button className="button secondary" type="button" onClick={() => void bootstrap()} disabled={isBootstrapping}>
               {isBootstrapping ? 'Actualizando...' : 'Actualizar'}
             </button>
@@ -250,38 +345,36 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
             <div className="empty-state">
               <strong>No hay pacientes activos</strong>
               <span>Cargalos desde Directorio para que esta vista tenga casos reales de demo.</span>
+              {isSecretaryOperational && onOpenDirectorySupport ? (
+                <button className="button secondary" type="button" onClick={onOpenDirectorySupport}>
+                  Abrir soporte de directorio
+                </button>
+              ) : null}
             </div>
           ) : (
-            <div className="list compact-list patient-selector-list">
-              {activePatients.map((patient) => {
-                const isSelected = patient.id === selectedPatientId;
+            <>
+              {isSelectedPatientHiddenByFilter ? (
+                <div className="inline-note" aria-live="polite">
+                  <strong>Tenés seleccionado a {selectedPatient?.first_name} {selectedPatient?.last_name}; el filtro actual lo ocultó de la lista.</strong>
+                </div>
+              ) : null}
 
-                return (
-                  <button
-                    key={patient.id}
-                    className={`patient-selector-card${isSelected ? ' selected' : ''}`}
-                    type="button"
-                    onClick={() => setSelectedPatientId(patient.id)}
-                  >
-                    <span className="surface-tab-eyebrow">Paciente</span>
-                    <strong>
-                      {patient.first_name} {patient.last_name}
-                    </strong>
-                    <small>Documento {patient.document}</small>
-                    <small>{patient.phone || 'Sin teléfono cargado'}</small>
-                  </button>
-                );
-              })}
-            </div>
+              {!shouldShowSearchDropdown && hasActiveSearchQuery && filteredPatients.length === 0 ? (
+                <div className="inline-note" aria-live="polite">
+                  <strong>No hay resultados visibles para el filtro actual.</strong>
+                </div>
+              ) : null}
+            </>
           )}
-        </SectionCard>
+        </div>
+      </SectionCard>
 
-        <div className="stack patients-main">
+      <div className="stack patients-main">
           <SectionCard className="stack">
             <div className="section-header">
               <div>
                 <h3>Resumen del paciente</h3>
-                <p>Ficha básica para contexto rápido antes de una tarea clínica u operativa.</p>
+                <p>{canAccessClinical ? 'Ficha básica para contexto rápido antes de una tarea clínica.' : 'Ficha básica para verificar datos sin abrir trabajo clínico.'}</p>
               </div>
               {selectedPatient ? <span className="pill">Activo</span> : null}
             </div>
@@ -337,14 +430,16 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
                 <h3>Encounters</h3>
                 <p>Listado descendente por fecha para ver la actividad clínica cuando el actor lo tiene habilitado.</p>
               </div>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => (selectedPatientId ? void loadEncounters(selectedPatientId) : undefined)}
-                disabled={!selectedPatientId || !canAccessClinical || isLoadingEncounters}
-              >
-                {isLoadingEncounters ? 'Actualizando...' : 'Recargar'}
-              </button>
+              {canAccessClinical ? (
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => (selectedPatientId ? void loadEncounters(selectedPatientId) : undefined)}
+                  disabled={!selectedPatientId || isLoadingEncounters}
+                >
+                  {isLoadingEncounters ? 'Actualizando...' : 'Recargar'}
+                </button>
+              ) : null}
             </div>
 
             {encountersError ? <div className="inline-note inline-note-error">{encountersError}</div> : null}
@@ -355,6 +450,11 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
               <div className="empty-state">
                 <strong>Encounters clínicos bloqueados</strong>
                 <span>{clinicalDeniedMessage}</span>
+                {isSecretaryOperational && activePatients.length === 0 && onOpenDirectorySupport ? (
+                  <button className="button secondary" type="button" onClick={onOpenDirectorySupport}>
+                    Abrir soporte de directorio
+                  </button>
+                ) : null}
               </div>
             ) : isLoadingEncounters ? (
               <div className="empty-state empty-state-soft">Cargando encounters...</div>
@@ -389,51 +489,59 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid }: PatientsWo
             <div className="section-header">
               <div>
                 <h3>Nueva nota / evolución</h3>
-                <p>Formulario corto para registrar una observación inicial solo cuando el actor tiene alcance clínico.</p>
+                <p>
+                  {canAccessClinical
+                    ? 'Formulario corto para registrar una observación inicial solo cuando el actor tiene alcance clínico.'
+                    : 'Secretaría no recibe formulario clínico en esta línea base.'}
+                </p>
               </div>
             </div>
 
-            <div className="form-grid">
-              <div className="field">
-                <label htmlFor="encounter-occurred-at">Fecha y hora</label>
-                <input
-                  id="encounter-occurred-at"
-                  type="datetime-local"
-                  value={form.occurred_at}
-                  onChange={(event) => setForm((current) => ({ ...current, occurred_at: event.target.value }))}
-                  disabled={!canAccessClinical}
-                />
+            {canAccessClinical ? (
+              <>
+                <div className="form-grid">
+                  <div className="field">
+                    <label htmlFor="encounter-occurred-at">Fecha y hora</label>
+                    <input
+                      id="encounter-occurred-at"
+                      type="datetime-local"
+                      value={form.occurred_at}
+                      onChange={(event) => setForm((current) => ({ ...current, occurred_at: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="encounter-note">Nota breve</label>
+                    <textarea
+                      id="encounter-note"
+                      value={form.note}
+                      onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
+                      placeholder="Ej: Paciente compensado, tolera medicación, se indican controles en 72 h."
+                    />
+                  </div>
+                </div>
+
+                {formError ? <div className="inline-note inline-note-error">{formError}</div> : null}
+
+                <div className="toolbar">
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => void handleCreateEncounter()}
+                    disabled={!selectedPatientId || isCreatingEncounter}
+                  >
+                    {isCreatingEncounter ? 'Guardando...' : 'Guardar nota'}
+                  </button>
+                  <span className="helper helper-inline">Sin router, sin wizard, sin historia clínica completa.</span>
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">
+                <strong>Trabajo clínico oculto para secretaría</strong>
+                <span>Esta línea base deja solo lista y resumen de pacientes. La escritura clínica sigue reservada al actor médico.</span>
               </div>
-
-              <div className="field form-grid-span-full">
-                <label htmlFor="encounter-note">Nota breve</label>
-                <textarea
-                  id="encounter-note"
-                  value={form.note}
-                  onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
-                  placeholder="Ej: Paciente compensado, tolera medicación, se indican controles en 72 h."
-                  disabled={!canAccessClinical}
-                />
-              </div>
-            </div>
-
-            {formError ? <div className="inline-note inline-note-error">{formError}</div> : null}
-
-            <div className="toolbar">
-              <button
-                className="button"
-                type="button"
-                onClick={() => void handleCreateEncounter()}
-                disabled={!selectedPatientId || !canAccessClinical || isCreatingEncounter}
-              >
-                {isCreatingEncounter ? 'Guardando...' : 'Guardar nota'}
-              </button>
-              <span className="helper helper-inline">
-                {canAccessClinical ? 'Sin router, sin wizard, sin historia clínica completa.' : 'Modo operativo: sin escritura clínica.'}
-              </span>
-            </div>
+            )}
           </SectionCard>
-        </div>
       </div>
     </PageContainer>
   );
