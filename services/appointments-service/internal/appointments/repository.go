@@ -3,6 +3,7 @@ package appointments
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -71,6 +72,44 @@ type Appointment struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	CancelledAt    *time.Time `json:"cancelled_at,omitempty"`
+}
+
+type CreateTemplateParams struct {
+	ProfessionalID string          `json:"professional_id"`
+	EffectiveFrom  string          `json:"effective_from"`
+	Recurrence     json.RawMessage `json:"recurrence"`
+	CreatedBy      *string         `json:"created_by,omitempty"`
+	Reason         *string         `json:"reason,omitempty"`
+}
+
+type CreateScheduleBlockParams struct {
+	ProfessionalID string  `json:"professional_id"`
+	Scope          string  `json:"scope"`
+	BlockDate      *string `json:"block_date,omitempty"`
+	StartDate      *string `json:"start_date,omitempty"`
+	EndDate        *string `json:"end_date,omitempty"`
+	DayOfWeek      *int    `json:"day_of_week,omitempty"`
+	StartTime      string  `json:"start_time"`
+	EndTime        string  `json:"end_time"`
+	TemplateID     *string `json:"template_id,omitempty"`
+}
+
+type UpdateScheduleBlockParams struct {
+	ProfessionalID string  `json:"professional_id"`
+	Scope          string  `json:"scope"`
+	BlockDate      *string `json:"block_date,omitempty"`
+	StartDate      *string `json:"start_date,omitempty"`
+	EndDate        *string `json:"end_date,omitempty"`
+	DayOfWeek      *int    `json:"day_of_week,omitempty"`
+	StartTime      string  `json:"start_time"`
+	EndTime        string  `json:"end_time"`
+	TemplateID     *string `json:"template_id,omitempty"`
+}
+
+type ScheduleBlockFilters struct {
+	ProfessionalID string
+	TemplateID     string
+	Scope          string
 }
 
 func ValidateBulkCreateSlotsParams(params BulkCreateSlotsParams) error {
@@ -390,6 +429,295 @@ func (r *Repository) CancelAppointment(ctx context.Context, appointmentID string
 	return updated, nil
 }
 
+func (r *Repository) CreateTemplate(ctx context.Context, params CreateTemplateParams) (ScheduleTemplate, error) {
+	professionalID, effectiveFrom, recurrence, createdBy, reason, err := validateCreateTemplateParams(params)
+	if err != nil {
+		return ScheduleTemplate{}, err
+	}
+
+	row := r.db.QueryRowContext(ctx, `
+		WITH upserted_template AS (
+			INSERT INTO schedule_templates (professional_id)
+			VALUES ($1)
+			ON CONFLICT (professional_id)
+			DO UPDATE SET updated_at = NOW()
+			RETURNING id, professional_id, created_at, updated_at
+		), inserted_version AS (
+			INSERT INTO schedule_template_versions (template_id, version_number, effective_from, recurrence, created_by, reason)
+			SELECT
+				t.id,
+				COALESCE((
+					SELECT MAX(version_number)
+					FROM schedule_template_versions
+					WHERE template_id = t.id
+				), 0) + 1,
+				$2,
+				$3,
+				$4,
+				$5
+			FROM upserted_template t
+			RETURNING id, template_id, version_number, effective_from, recurrence, created_at, created_by, reason
+		)
+		SELECT
+			t.id,
+			t.professional_id,
+			t.created_at,
+			t.updated_at,
+			v.id,
+			v.version_number,
+			v.effective_from,
+			v.recurrence,
+			v.created_at,
+			v.created_by,
+			v.reason
+		FROM upserted_template t
+		JOIN inserted_version v ON v.template_id = t.id
+	`, professionalID, effectiveFrom, recurrence, createdBy, reason)
+
+	template, err := scanTemplateWithVersion(row)
+	if err != nil {
+		if isConflictViolation(err) {
+			return ScheduleTemplate{}, ErrConflict
+		}
+		return ScheduleTemplate{}, err
+	}
+
+	return template, nil
+}
+
+func (r *Repository) GetTemplate(ctx context.Context, templateID string) (ScheduleTemplate, error) {
+	if _, err := uuid.Parse(strings.TrimSpace(templateID)); err != nil {
+		return ScheduleTemplate{}, ErrValidation
+	}
+
+	template, err := scanTemplate(r.db.QueryRowContext(ctx, `
+		SELECT id, professional_id, created_at, updated_at
+		FROM schedule_templates
+		WHERE id = $1
+	`, strings.TrimSpace(templateID)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ScheduleTemplate{}, ErrNotFound
+	}
+	if err != nil {
+		return ScheduleTemplate{}, err
+	}
+
+	return template, nil
+}
+
+func (r *Repository) ListTemplateVersions(ctx context.Context, templateID string) ([]ScheduleTemplateVersion, error) {
+	if _, err := uuid.Parse(strings.TrimSpace(templateID)); err != nil {
+		return nil, ErrValidation
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, template_id, version_number, effective_from, recurrence, created_at, created_by, reason
+		FROM schedule_template_versions
+		WHERE template_id = $1
+		ORDER BY effective_from DESC, version_number DESC
+	`, strings.TrimSpace(templateID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := make([]ScheduleTemplateVersion, 0)
+	for rows.Next() {
+		version, scanErr := scanTemplateVersion(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		versions = append(versions, version)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return versions, nil
+}
+
+func (r *Repository) GetActiveTemplate(ctx context.Context, professionalID string, effectiveDate string) (ScheduleTemplateVersion, error) {
+	validatedProfessionalID, validatedEffectiveDate, err := validateActiveTemplateLookupParams(professionalID, effectiveDate)
+	if err != nil {
+		return ScheduleTemplateVersion{}, err
+	}
+
+	version, err := scanTemplateVersion(r.db.QueryRowContext(ctx, `
+		SELECT v.id, v.template_id, v.version_number, v.effective_from, v.recurrence, v.created_at, v.created_by, v.reason
+		FROM schedule_template_versions v
+		JOIN schedule_templates t ON t.id = v.template_id
+		WHERE t.professional_id = $1
+		  AND v.effective_from <= $2
+		ORDER BY v.effective_from DESC, v.version_number DESC
+		LIMIT 1
+	`, validatedProfessionalID, validatedEffectiveDate))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ScheduleTemplateVersion{}, ErrNotFound
+	}
+	if err != nil {
+		return ScheduleTemplateVersion{}, err
+	}
+
+	return version, nil
+}
+
+func (r *Repository) CreateScheduleBlock(ctx context.Context, params CreateScheduleBlockParams) (ScheduleBlock, error) {
+	validated, err := validateScheduleBlockParams(params.ProfessionalID, params.Scope, params.BlockDate, params.StartDate, params.EndDate, params.DayOfWeek, params.StartTime, params.EndTime, params.TemplateID)
+	if err != nil {
+		return ScheduleBlock{}, err
+	}
+
+	block, err := scanScheduleBlock(r.db.QueryRowContext(ctx, `
+		INSERT INTO schedule_blocks (professional_id, scope, block_date, start_date, end_date, day_of_week, start_time, end_time, template_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, professional_id, scope, block_date, start_date, end_date, day_of_week, TO_CHAR(start_time, 'HH24:MI'), TO_CHAR(end_time, 'HH24:MI'), template_id, created_at, updated_at
+	`, validated.professionalID, validated.scope, validated.blockDate, validated.startDate, validated.endDate, validated.dayOfWeek, validated.startTime, validated.endTime, validated.templateID))
+	if err != nil {
+		if isConflictViolation(err) {
+			return ScheduleBlock{}, ErrConflict
+		}
+		return ScheduleBlock{}, err
+	}
+
+	return block, nil
+}
+
+func (r *Repository) GetScheduleBlock(ctx context.Context, blockID string) (ScheduleBlock, error) {
+	if _, err := uuid.Parse(strings.TrimSpace(blockID)); err != nil {
+		return ScheduleBlock{}, ErrValidation
+	}
+
+	block, err := scanScheduleBlock(r.db.QueryRowContext(ctx, `
+		SELECT id, professional_id, scope, block_date, start_date, end_date, day_of_week, TO_CHAR(start_time, 'HH24:MI'), TO_CHAR(end_time, 'HH24:MI'), template_id, created_at, updated_at
+		FROM schedule_blocks
+		WHERE id = $1
+	`, strings.TrimSpace(blockID)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ScheduleBlock{}, ErrNotFound
+	}
+	if err != nil {
+		return ScheduleBlock{}, err
+	}
+
+	return block, nil
+}
+
+func (r *Repository) ListScheduleBlocks(ctx context.Context, filters ScheduleBlockFilters) ([]ScheduleBlock, error) {
+	if err := validateScheduleBlockFilters(filters); err != nil {
+		return nil, err
+	}
+
+	baseQuery := `
+		SELECT id, professional_id, scope, block_date, start_date, end_date, day_of_week, TO_CHAR(start_time, 'HH24:MI'), TO_CHAR(end_time, 'HH24:MI'), template_id, created_at, updated_at
+		FROM schedule_blocks
+	`
+
+	where := make([]string, 0)
+	args := make([]any, 0)
+
+	if filters.ProfessionalID != "" {
+		where = append(where, fmt.Sprintf("professional_id = $%d", len(args)+1))
+		args = append(args, strings.TrimSpace(filters.ProfessionalID))
+	}
+	if filters.TemplateID != "" {
+		where = append(where, fmt.Sprintf("template_id = $%d", len(args)+1))
+		args = append(args, strings.TrimSpace(filters.TemplateID))
+	}
+	if filters.Scope != "" {
+		where = append(where, fmt.Sprintf("scope = $%d", len(args)+1))
+		args = append(args, strings.TrimSpace(filters.Scope))
+	}
+
+	query := baseQuery
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY COALESCE(block_date, start_date) NULLS LAST, day_of_week NULLS LAST, start_time, created_at"
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	blocks := make([]ScheduleBlock, 0)
+	for rows.Next() {
+		block, scanErr := scanScheduleBlock(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		blocks = append(blocks, block)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return blocks, nil
+}
+
+func (r *Repository) UpdateScheduleBlock(ctx context.Context, blockID string, params UpdateScheduleBlockParams) (ScheduleBlock, error) {
+	trimmedBlockID := strings.TrimSpace(blockID)
+	if _, err := uuid.Parse(trimmedBlockID); err != nil {
+		return ScheduleBlock{}, ErrValidation
+	}
+
+	validated, err := validateScheduleBlockParams(params.ProfessionalID, params.Scope, params.BlockDate, params.StartDate, params.EndDate, params.DayOfWeek, params.StartTime, params.EndTime, params.TemplateID)
+	if err != nil {
+		return ScheduleBlock{}, err
+	}
+
+	block, err := scanScheduleBlock(r.db.QueryRowContext(ctx, `
+		UPDATE schedule_blocks
+		SET professional_id = $2,
+			scope = $3,
+			block_date = $4,
+			start_date = $5,
+			end_date = $6,
+			day_of_week = $7,
+			start_time = $8,
+			end_time = $9,
+			template_id = $10,
+			updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, professional_id, scope, block_date, start_date, end_date, day_of_week, TO_CHAR(start_time, 'HH24:MI'), TO_CHAR(end_time, 'HH24:MI'), template_id, created_at, updated_at
+	`, trimmedBlockID, validated.professionalID, validated.scope, validated.blockDate, validated.startDate, validated.endDate, validated.dayOfWeek, validated.startTime, validated.endTime, validated.templateID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ScheduleBlock{}, ErrNotFound
+	}
+	if err != nil {
+		if isConflictViolation(err) {
+			return ScheduleBlock{}, ErrConflict
+		}
+		return ScheduleBlock{}, err
+	}
+
+	return block, nil
+}
+
+func (r *Repository) DeleteScheduleBlock(ctx context.Context, blockID string) error {
+	trimmedBlockID := strings.TrimSpace(blockID)
+	if _, err := uuid.Parse(trimmedBlockID); err != nil {
+		return ErrValidation
+	}
+
+	var deletedID string
+	err := r.db.QueryRowContext(ctx, `
+		DELETE FROM schedule_blocks
+		WHERE id = $1
+		RETURNING id
+	`, trimmedBlockID).Scan(&deletedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func parseBulkSlotInputs(params BulkCreateSlotsParams) (string, time.Time, time.Time, time.Duration, error) {
 	professionalID := strings.TrimSpace(params.ProfessionalID)
 	if _, err := uuid.Parse(professionalID); err != nil {
@@ -444,6 +772,222 @@ func validateAppointmentParams(params CreateAppointmentParams) error {
 	return nil
 }
 
+func validateCreateTemplateParams(params CreateTemplateParams) (string, time.Time, json.RawMessage, *string, *string, error) {
+	professionalID := strings.TrimSpace(params.ProfessionalID)
+	if _, err := uuid.Parse(professionalID); err != nil {
+		return "", time.Time{}, nil, nil, nil, ErrValidation
+	}
+
+	effectiveFrom, err := time.Parse("2006-01-02", strings.TrimSpace(params.EffectiveFrom))
+	if err != nil {
+		return "", time.Time{}, nil, nil, nil, ErrValidation
+	}
+
+	recurrence := make(json.RawMessage, len(params.Recurrence))
+	copy(recurrence, params.Recurrence)
+	if !json.Valid(recurrence) {
+		return "", time.Time{}, nil, nil, nil, ErrValidation
+	}
+
+	var recurrencePayload map[string]any
+	if err := json.Unmarshal(recurrence, &recurrencePayload); err != nil || recurrencePayload == nil {
+		return "", time.Time{}, nil, nil, nil, ErrValidation
+	}
+
+	createdBy, err := normalizeOptionalUUID(params.CreatedBy)
+	if err != nil {
+		return "", time.Time{}, nil, nil, nil, err
+	}
+
+	reason := normalizeOptionalString(params.Reason)
+
+	return professionalID, effectiveFrom, recurrence, createdBy, reason, nil
+}
+
+func validateActiveTemplateLookupParams(professionalIDValue, effectiveDateValue string) (string, time.Time, error) {
+	professionalID := strings.TrimSpace(professionalIDValue)
+	if _, err := uuid.Parse(professionalID); err != nil {
+		return "", time.Time{}, ErrValidation
+	}
+
+	effectiveDate, err := time.Parse("2006-01-02", strings.TrimSpace(effectiveDateValue))
+	if err != nil {
+		return "", time.Time{}, ErrValidation
+	}
+
+	return professionalID, effectiveDate, nil
+}
+
+type validatedScheduleBlockParams struct {
+	professionalID string
+	scope          string
+	blockDate      *time.Time
+	startDate      *time.Time
+	endDate        *time.Time
+	dayOfWeek      *int
+	startTime      string
+	endTime        string
+	templateID     *string
+}
+
+func validateScheduleBlockParams(professionalIDValue, scopeValue string, blockDateValue, startDateValue, endDateValue *string, dayOfWeekValue *int, startTimeValue, endTimeValue string, templateIDValue *string) (validatedScheduleBlockParams, error) {
+	professionalID := strings.TrimSpace(professionalIDValue)
+	if _, err := uuid.Parse(professionalID); err != nil {
+		return validatedScheduleBlockParams{}, ErrValidation
+	}
+
+	scope := strings.TrimSpace(scopeValue)
+	if scope != "single" && scope != "range" && scope != "template" {
+		return validatedScheduleBlockParams{}, ErrValidation
+	}
+
+	blockDate, err := normalizeOptionalDate(blockDateValue)
+	if err != nil {
+		return validatedScheduleBlockParams{}, err
+	}
+	startDate, err := normalizeOptionalDate(startDateValue)
+	if err != nil {
+		return validatedScheduleBlockParams{}, err
+	}
+	endDate, err := normalizeOptionalDate(endDateValue)
+	if err != nil {
+		return validatedScheduleBlockParams{}, err
+	}
+
+	startTime, err := normalizeClockString(startTimeValue)
+	if err != nil {
+		return validatedScheduleBlockParams{}, err
+	}
+	endTime, err := normalizeClockString(endTimeValue)
+	if err != nil {
+		return validatedScheduleBlockParams{}, err
+	}
+	if startTime >= endTime {
+		return validatedScheduleBlockParams{}, ErrValidation
+	}
+
+	templateID, err := normalizeOptionalUUID(templateIDValue)
+	if err != nil {
+		return validatedScheduleBlockParams{}, err
+	}
+
+	var dayOfWeek *int
+	if dayOfWeekValue != nil {
+		day := *dayOfWeekValue
+		if day < 1 || day > 7 {
+			return validatedScheduleBlockParams{}, ErrValidation
+		}
+		dayOfWeek = &day
+	}
+
+	switch scope {
+	case "single":
+		if blockDate == nil || startDate != nil || endDate != nil || dayOfWeek != nil || templateID != nil {
+			return validatedScheduleBlockParams{}, ErrValidation
+		}
+	case "range":
+		if blockDate != nil || startDate == nil || endDate == nil || dayOfWeek != nil || templateID != nil {
+			return validatedScheduleBlockParams{}, ErrValidation
+		}
+		if startDate.After(*endDate) {
+			return validatedScheduleBlockParams{}, ErrValidation
+		}
+	case "template":
+		if blockDate != nil || startDate != nil || endDate != nil || dayOfWeek == nil || templateID == nil {
+			return validatedScheduleBlockParams{}, ErrValidation
+		}
+	}
+
+	return validatedScheduleBlockParams{
+		professionalID: professionalID,
+		scope:          scope,
+		blockDate:      blockDate,
+		startDate:      startDate,
+		endDate:        endDate,
+		dayOfWeek:      dayOfWeek,
+		startTime:      startTime,
+		endTime:        endTime,
+		templateID:     templateID,
+	}, nil
+}
+
+func validateScheduleBlockFilters(filters ScheduleBlockFilters) error {
+	if filters.ProfessionalID != "" {
+		if _, err := uuid.Parse(strings.TrimSpace(filters.ProfessionalID)); err != nil {
+			return ErrValidation
+		}
+	}
+	if filters.TemplateID != "" {
+		if _, err := uuid.Parse(strings.TrimSpace(filters.TemplateID)); err != nil {
+			return ErrValidation
+		}
+	}
+	if filters.Scope != "" {
+		scope := strings.TrimSpace(filters.Scope)
+		if scope != "single" && scope != "range" && scope != "template" {
+			return ErrValidation
+		}
+	}
+
+	return nil
+}
+
+func normalizeOptionalDate(value *string) (*time.Time, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return nil, ErrValidation
+	}
+
+	return &parsed, nil
+}
+
+func normalizeClockString(value string) (string, error) {
+	parsed, err := time.Parse("15:04", strings.TrimSpace(value))
+	if err != nil {
+		return "", ErrValidation
+	}
+
+	return parsed.Format("15:04"), nil
+}
+
+func normalizeOptionalUUID(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	if _, err := uuid.Parse(trimmed); err != nil {
+		return nil, ErrValidation
+	}
+
+	return &trimmed, nil
+}
+
+func normalizeOptionalString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+
+	return &trimmed
+}
+
 func isConflictViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
@@ -478,6 +1022,14 @@ type appointmentScanner interface {
 	Scan(dest ...any) error
 }
 
+type templateScanner interface {
+	Scan(dest ...any) error
+}
+
+type scheduleBlockScanner interface {
+	Scan(dest ...any) error
+}
+
 func scanAppointment(scanner appointmentScanner) (Appointment, error) {
 	var appointment Appointment
 	var cancelledAt sql.NullTime
@@ -498,4 +1050,149 @@ func scanAppointment(scanner appointmentScanner) (Appointment, error) {
 		appointment.CancelledAt = &cancelledAt.Time
 	}
 	return appointment, nil
+}
+
+func scanTemplate(scanner templateScanner) (ScheduleTemplate, error) {
+	var template ScheduleTemplate
+	err := scanner.Scan(
+		&template.ID,
+		&template.ProfessionalID,
+		&template.CreatedAt,
+		&template.UpdatedAt,
+	)
+	if err != nil {
+		return ScheduleTemplate{}, err
+	}
+
+	return template, nil
+}
+
+func scanTemplateVersion(scanner templateScanner) (ScheduleTemplateVersion, error) {
+	var (
+		version           ScheduleTemplateVersion
+		recurrence        []byte
+		createdBy, reason sql.NullString
+	)
+
+	err := scanner.Scan(
+		&version.ID,
+		&version.TemplateID,
+		&version.VersionNumber,
+		&version.EffectiveFrom,
+		&recurrence,
+		&version.CreatedAt,
+		&createdBy,
+		&reason,
+	)
+	if err != nil {
+		return ScheduleTemplateVersion{}, err
+	}
+
+	version.Recurrence = make(json.RawMessage, len(recurrence))
+	copy(version.Recurrence, recurrence)
+	if createdBy.Valid {
+		version.CreatedBy = &createdBy.String
+	}
+	if reason.Valid {
+		version.Reason = &reason.String
+	}
+
+	return version, nil
+}
+
+func scanTemplateWithVersion(scanner templateScanner) (ScheduleTemplate, error) {
+	template, err := scanTemplateVersionJoin(scanner)
+	if err != nil {
+		return ScheduleTemplate{}, err
+	}
+
+	return template, nil
+}
+
+func scanScheduleBlock(scanner scheduleBlockScanner) (ScheduleBlock, error) {
+	var (
+		block                         ScheduleBlock
+		blockDate, startDate, endDate sql.NullTime
+		dayOfWeek                     sql.NullInt64
+		templateID                    sql.NullString
+	)
+
+	err := scanner.Scan(
+		&block.ID,
+		&block.ProfessionalID,
+		&block.Scope,
+		&blockDate,
+		&startDate,
+		&endDate,
+		&dayOfWeek,
+		&block.StartTime,
+		&block.EndTime,
+		&templateID,
+		&block.CreatedAt,
+		&block.UpdatedAt,
+	)
+	if err != nil {
+		return ScheduleBlock{}, err
+	}
+
+	if blockDate.Valid {
+		date := blockDate.Time
+		block.BlockDate = &date
+	}
+	if startDate.Valid {
+		date := startDate.Time
+		block.StartDate = &date
+	}
+	if endDate.Valid {
+		date := endDate.Time
+		block.EndDate = &date
+	}
+	if dayOfWeek.Valid {
+		day := int(dayOfWeek.Int64)
+		block.DayOfWeek = &day
+	}
+	if templateID.Valid {
+		block.TemplateID = &templateID.String
+	}
+
+	return block, nil
+}
+
+func scanTemplateVersionJoin(scanner templateScanner) (ScheduleTemplate, error) {
+	var (
+		template          ScheduleTemplate
+		version           ScheduleTemplateVersion
+		recurrence        []byte
+		createdBy, reason sql.NullString
+	)
+
+	err := scanner.Scan(
+		&template.ID,
+		&template.ProfessionalID,
+		&template.CreatedAt,
+		&template.UpdatedAt,
+		&version.ID,
+		&version.VersionNumber,
+		&version.EffectiveFrom,
+		&recurrence,
+		&version.CreatedAt,
+		&createdBy,
+		&reason,
+	)
+	if err != nil {
+		return ScheduleTemplate{}, err
+	}
+
+	version.TemplateID = template.ID
+	version.Recurrence = make(json.RawMessage, len(recurrence))
+	copy(version.Recurrence, recurrence)
+	if createdBy.Valid {
+		version.CreatedBy = &createdBy.String
+	}
+	if reason.Valid {
+		version.Reason = &reason.String
+	}
+	template.Versions = []ScheduleTemplateVersion{version}
+
+	return template, nil
 }

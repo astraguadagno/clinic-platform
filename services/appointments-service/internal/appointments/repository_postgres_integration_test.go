@@ -2,10 +2,224 @@ package appointments
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
 )
+
+func TestRepositoryIntegrationScheduleBlockLifecyclePersistsScopedBlocks(t *testing.T) {
+	repo, db := newPostgresIntegrationRepository(t)
+
+	ctx := context.Background()
+	professionalID := "550e8400-e29b-41d4-a716-446655440140"
+	createdTemplate, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+		ProfessionalID: professionalID,
+		EffectiveFrom:  "2026-05-01",
+		Recurrence:     json.RawMessage(`{"monday":{"start_time":"09:00","end_time":"12:00","slot_duration_minutes":30}}`),
+	})
+	if err != nil {
+		t.Fatalf("create template for schedule block: %v", err)
+	}
+
+	created, err := repo.CreateScheduleBlock(ctx, CreateScheduleBlockParams{
+		ProfessionalID: professionalID,
+		Scope:          "single",
+		BlockDate:      stringPtr("2026-05-05"),
+		StartTime:      "09:00",
+		EndTime:        "12:00",
+	})
+	if err != nil {
+		t.Fatalf("create schedule block: %v", err)
+	}
+	if created.BlockDate == nil || created.BlockDate.Format("2006-01-02") != "2026-05-05" {
+		t.Fatalf("created block_date = %v, want 2026-05-05", created.BlockDate)
+	}
+
+	updated, err := repo.UpdateScheduleBlock(ctx, created.ID, UpdateScheduleBlockParams{
+		ProfessionalID: professionalID,
+		Scope:          "template",
+		DayOfWeek:      intPtr(1),
+		StartTime:      "10:00",
+		EndTime:        "11:00",
+		TemplateID:     &createdTemplate.ID,
+	})
+	if err != nil {
+		t.Fatalf("update schedule block: %v", err)
+	}
+	if updated.Scope != "template" {
+		t.Fatalf("updated scope = %q, want template", updated.Scope)
+	}
+	if updated.TemplateID == nil || *updated.TemplateID != createdTemplate.ID {
+		t.Fatalf("updated template_id = %v, want %q", updated.TemplateID, createdTemplate.ID)
+	}
+	if updated.DayOfWeek == nil || *updated.DayOfWeek != 1 {
+		t.Fatalf("updated day_of_week = %v, want 1", updated.DayOfWeek)
+	}
+
+	persisted, err := repo.GetScheduleBlock(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("get schedule block: %v", err)
+	}
+	if persisted.Scope != "template" {
+		t.Fatalf("persisted scope = %q, want template", persisted.Scope)
+	}
+	if persisted.StartTime != "10:00" || persisted.EndTime != "11:00" {
+		t.Fatalf("persisted time range = %s-%s, want 10:00-11:00", persisted.StartTime, persisted.EndTime)
+	}
+
+	blocks, err := repo.ListScheduleBlocks(ctx, ScheduleBlockFilters{ProfessionalID: professionalID})
+	if err != nil {
+		t.Fatalf("list schedule blocks: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("listed blocks len = %d, want 1", len(blocks))
+	}
+	if blocks[0].ID != created.ID {
+		t.Fatalf("listed block id = %q, want %q", blocks[0].ID, created.ID)
+	}
+
+	if got := countRows(t, db, "schedule_blocks"); got != 1 {
+		t.Fatalf("schedule blocks persisted = %d, want 1", got)
+	}
+
+	if err := repo.DeleteScheduleBlock(ctx, created.ID); err != nil {
+		t.Fatalf("delete schedule block: %v", err)
+	}
+	if got := countRows(t, db, "schedule_blocks"); got != 0 {
+		t.Fatalf("schedule blocks persisted after delete = %d, want 0", got)
+	}
+
+	_, err = repo.GetScheduleBlock(ctx, created.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("post-delete get err = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestRepositoryIntegrationCreateTemplatePersistsTemplateAndVersions(t *testing.T) {
+	repo, db := newPostgresIntegrationRepository(t)
+
+	ctx := context.Background()
+	professionalID := "550e8400-e29b-41d4-a716-446655440100"
+	createdBy := "550e8400-e29b-41d4-a716-446655440101"
+	firstReason := "initial rollout"
+	secondReason := "winter hours"
+
+	firstRecurrence := json.RawMessage(`{"monday":{"start_time":"09:00","end_time":"12:00","slot_duration_minutes":30}}`)
+	created, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+		ProfessionalID: professionalID,
+		EffectiveFrom:  "2026-05-01",
+		Recurrence:     firstRecurrence,
+		CreatedBy:      &createdBy,
+		Reason:         &firstReason,
+	})
+	if err != nil {
+		t.Fatalf("create initial template: %v", err)
+	}
+	if len(created.Versions) != 1 {
+		t.Fatalf("created versions len = %d, want 1", len(created.Versions))
+	}
+	if created.Versions[0].VersionNumber != 1 {
+		t.Fatalf("initial version number = %d, want 1", created.Versions[0].VersionNumber)
+	}
+
+	secondRecurrence := json.RawMessage(`{"monday":{"start_time":"08:00","end_time":"12:00","slot_duration_minutes":30},"wednesday":{"start_time":"10:00","end_time":"13:00","slot_duration_minutes":30}}`)
+	updated, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+		ProfessionalID: professionalID,
+		EffectiveFrom:  "2026-06-01",
+		Recurrence:     secondRecurrence,
+		Reason:         &secondReason,
+	})
+	if err != nil {
+		t.Fatalf("create second template version: %v", err)
+	}
+	if updated.ID != created.ID {
+		t.Fatalf("updated template id = %q, want %q", updated.ID, created.ID)
+	}
+	if updated.Versions[0].VersionNumber != 2 {
+		t.Fatalf("second version number = %d, want 2", updated.Versions[0].VersionNumber)
+	}
+
+	persistedTemplate, err := repo.GetTemplate(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("get template: %v", err)
+	}
+	if persistedTemplate.ProfessionalID != professionalID {
+		t.Fatalf("persisted professional_id = %q, want %q", persistedTemplate.ProfessionalID, professionalID)
+	}
+
+	versions, err := repo.ListTemplateVersions(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("list template versions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("persisted versions len = %d, want 2", len(versions))
+	}
+	if versions[0].VersionNumber != 2 || versions[1].VersionNumber != 1 {
+		t.Fatalf("persisted version order = [%d %d], want [2 1]", versions[0].VersionNumber, versions[1].VersionNumber)
+	}
+	if versions[1].CreatedBy == nil || *versions[1].CreatedBy != createdBy {
+		t.Fatalf("persisted created_by = %v, want %q", versions[1].CreatedBy, createdBy)
+	}
+	if versions[0].Reason == nil || *versions[0].Reason != secondReason {
+		t.Fatalf("persisted reason = %v, want %q", versions[0].Reason, secondReason)
+	}
+	if got := countRows(t, db, "schedule_templates"); got != 1 {
+		t.Fatalf("templates persisted = %d, want 1", got)
+	}
+	if got := countRows(t, db, "schedule_template_versions"); got != 2 {
+		t.Fatalf("template versions persisted = %d, want 2", got)
+	}
+}
+
+func TestRepositoryIntegrationGetActiveTemplateSelectsLatestApplicableVersion(t *testing.T) {
+	repo, _ := newPostgresIntegrationRepository(t)
+
+	ctx := context.Background()
+	professionalID := "550e8400-e29b-41d4-a716-446655440102"
+
+	first, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+		ProfessionalID: professionalID,
+		EffectiveFrom:  "2026-05-01",
+		Recurrence:     json.RawMessage(`{"monday":{"start_time":"09:00","end_time":"12:00","slot_duration_minutes":30}}`),
+	})
+	if err != nil {
+		t.Fatalf("create first template version: %v", err)
+	}
+
+	second, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+		ProfessionalID: professionalID,
+		EffectiveFrom:  "2026-06-01",
+		Recurrence:     json.RawMessage(`{"monday":{"start_time":"08:00","end_time":"12:00","slot_duration_minutes":30}}`),
+	})
+	if err != nil {
+		t.Fatalf("create second template version: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("template family id = %q, want %q", second.ID, first.ID)
+	}
+
+	mayVersion, err := repo.GetActiveTemplate(ctx, professionalID, "2026-05-31")
+	if err != nil {
+		t.Fatalf("get active template for may: %v", err)
+	}
+	if mayVersion.VersionNumber != 1 {
+		t.Fatalf("may version number = %d, want 1", mayVersion.VersionNumber)
+	}
+
+	juneVersion, err := repo.GetActiveTemplate(ctx, professionalID, "2026-06-01")
+	if err != nil {
+		t.Fatalf("get active template for june boundary: %v", err)
+	}
+	if juneVersion.VersionNumber != 2 {
+		t.Fatalf("june version number = %d, want 2", juneVersion.VersionNumber)
+	}
+
+	_, err = repo.GetActiveTemplate(ctx, professionalID, "2026-04-30")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("pre-history err = %v, want %v", err, ErrNotFound)
+	}
+}
 
 func TestRepositoryIntegrationCreateSlotsBulkRejectsOverlapInPostgres(t *testing.T) {
 	repo, db := newPostgresIntegrationRepository(t)
