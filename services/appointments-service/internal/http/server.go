@@ -11,6 +11,7 @@ import (
 
 	"clinic-platform/services/appointments-service/internal/appointments"
 	"clinic-platform/services/appointments-service/internal/directory"
+	"github.com/google/uuid"
 )
 
 type Config struct {
@@ -29,10 +30,22 @@ type Server struct {
 type appointmentsRepository interface {
 	CreateSlotsBulk(ctx context.Context, params appointments.BulkCreateSlotsParams) ([]appointments.AvailabilitySlot, error)
 	ListSlots(ctx context.Context, filters appointments.SlotFilters) ([]appointments.AvailabilitySlot, error)
+	CreateTemplate(ctx context.Context, params appointments.CreateTemplateParams) (appointments.ScheduleTemplate, error)
+	GetActiveTemplate(ctx context.Context, professionalID string, effectiveDate string) (appointments.ScheduleTemplateVersion, error)
+	GetTemplate(ctx context.Context, templateID string) (appointments.ScheduleTemplate, error)
+	ListTemplateVersions(ctx context.Context, templateID string) ([]appointments.ScheduleTemplateVersion, error)
 	CreateAppointment(ctx context.Context, params appointments.CreateAppointmentParams) (appointments.Appointment, error)
 	ListAppointments(ctx context.Context, filters appointments.AppointmentFilters) ([]appointments.Appointment, error)
 	GetAppointmentByID(ctx context.Context, appointmentID string) (appointments.Appointment, error)
 	CancelAppointment(ctx context.Context, appointmentID string) (appointments.Appointment, error)
+}
+
+type createScheduleRequest struct {
+	ProfessionalID string          `json:"professional_id"`
+	EffectiveFrom  string          `json:"effective_from"`
+	Recurrence     json.RawMessage `json:"recurrence"`
+	CreatedBy      *string         `json:"created_by,omitempty"`
+	Reason         *string         `json:"reason,omitempty"`
 }
 
 type directoryLookup interface {
@@ -69,6 +82,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/info", s.info)
 	s.mux.HandleFunc("/slots", s.slots)
 	s.mux.HandleFunc("/slots/bulk", s.bulkSlots)
+	s.mux.HandleFunc("/schedules", s.schedules)
+	s.mux.HandleFunc("/schedules/versions", s.scheduleVersions)
 	s.mux.HandleFunc("/appointments", s.appointments)
 	s.mux.HandleFunc("/appointments/", s.appointmentByIDAction)
 }
@@ -163,6 +178,26 @@ func (s *Server) appointments(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) schedules(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.getSchedule(w, r)
+	case http.MethodPost:
+		s.createSchedule(w, r)
+	default:
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (s *Server) scheduleVersions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	s.getScheduleVersions(w, r)
+}
+
 func (s *Server) appointmentByIDAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		writeMethodNotAllowed(w, http.MethodPatch)
@@ -235,6 +270,140 @@ func (s *Server) listSlots(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"items": slots})
+}
+
+func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+	if actor.Role == "secretary" {
+		writeError(w, http.StatusForbidden, "insufficient role")
+		return
+	}
+
+	var request createScheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	request.ProfessionalID, ok = enforceProfessionalScope(actor, request.ProfessionalID)
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
+		return
+	}
+
+	params := appointments.CreateTemplateParams{
+		ProfessionalID: request.ProfessionalID,
+		EffectiveFrom:  request.EffectiveFrom,
+		Recurrence:     request.Recurrence,
+		CreatedBy:      request.CreatedBy,
+		Reason:         request.Reason,
+	}
+	if err := validateCreateScheduleRequest(params); errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid schedule request")
+		return
+	}
+
+	professionalExists, err := s.dir.ProfessionalExists(r.Context(), params.ProfessionalID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return
+	}
+	if !professionalExists {
+		writeError(w, http.StatusBadRequest, "professional not found")
+		return
+	}
+
+	template, err := s.repo.CreateTemplate(r.Context(), params)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid schedule request")
+		return
+	}
+	if errors.Is(err, appointments.ErrConflict) {
+		writeError(w, http.StatusConflict, "schedule version already exists for effective date")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create schedule")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, template)
+}
+
+func (s *Server) getSchedule(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+
+	professionalID, ok := enforceProfessionalScope(actor, r.URL.Query().Get("professional_id"))
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
+		return
+	}
+
+	effectiveDate := strings.TrimSpace(r.URL.Query().Get("effective_date"))
+	schedule, err := appointments.NewScheduleService(s.repo).GetSchedule(r.Context(), professionalID, effectiveDate)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid schedule filters")
+		return
+	}
+	if errors.Is(err, appointments.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "schedule not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load schedule")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, schedule)
+}
+
+func (s *Server) getScheduleVersions(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireAgendaActor(w, r)
+	if !ok {
+		return
+	}
+
+	templateID := strings.TrimSpace(r.URL.Query().Get("template_id"))
+	template, err := s.repo.GetTemplate(r.Context(), templateID)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid schedule filters")
+		return
+	}
+	if errors.Is(err, appointments.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "schedule not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load schedule versions")
+		return
+	}
+
+	if _, ok := enforceProfessionalScope(actor, template.ProfessionalID); !ok {
+		writeError(w, http.StatusForbidden, "forbidden professional scope")
+		return
+	}
+
+	versions, err := s.repo.ListTemplateVersions(r.Context(), templateID)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid schedule filters")
+		return
+	}
+	if errors.Is(err, appointments.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "schedule not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load schedule versions")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": versions})
 }
 
 func (s *Server) createAppointment(w http.ResponseWriter, r *http.Request) {
@@ -337,6 +506,28 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func validateCreateScheduleRequest(params appointments.CreateTemplateParams) error {
+	if _, err := uuid.Parse(strings.TrimSpace(params.ProfessionalID)); err != nil {
+		return appointments.ErrValidation
+	}
+	if _, err := time.Parse("2006-01-02", strings.TrimSpace(params.EffectiveFrom)); err != nil {
+		return appointments.ErrValidation
+	}
+	if !json.Valid(params.Recurrence) {
+		return appointments.ErrValidation
+	}
+	var recurrence map[string]any
+	if err := json.Unmarshal(params.Recurrence, &recurrence); err != nil || recurrence == nil {
+		return appointments.ErrValidation
+	}
+	if params.CreatedBy != nil {
+		if _, err := uuid.Parse(strings.TrimSpace(*params.CreatedBy)); err != nil {
+			return appointments.ErrValidation
+		}
+	}
+	return nil
 }
 
 func writeUnauthorized(w http.ResponseWriter) {

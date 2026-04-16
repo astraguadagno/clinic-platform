@@ -92,7 +92,7 @@ func resetAppointmentsSchema(t *testing.T, db *sql.DB) {
 func applyAppointmentsMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	for _, migration := range []string{"001_init.sql", "002_prevent_availability_slot_overlaps.sql", "003_allow_rebooking_cancelled_slots.sql"} {
+	for _, migration := range []string{"001_init.sql", "002_prevent_availability_slot_overlaps.sql", "003_allow_rebooking_cancelled_slots.sql", "004_schedule_templates.sql", "005_schedule_blocks.sql"} {
 		contents := readAppointmentsMigrationFile(t, migration)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -184,6 +184,21 @@ func countAppointments(t *testing.T, db *sql.DB) int {
 	var total int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM appointments`).Scan(&total); err != nil {
 		t.Fatalf("count appointments: %v", err)
+	}
+
+	return total
+}
+
+func countRows(t *testing.T, db *sql.DB, table string) int {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var total int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
+	if err := db.QueryRowContext(ctx, query).Scan(&total); err != nil {
+		t.Fatalf("count rows in %s: %v", table, err)
 	}
 
 	return total
