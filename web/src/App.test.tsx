@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
@@ -29,6 +29,10 @@ vi.mock('./features/schedule/ScheduleDemo', () => ({
   ),
 }));
 
+vi.mock('./features/schedule/WeeklyScheduleWorkspace', () => ({
+  WeeklyScheduleWorkspace: ({ agendaMode }: { agendaMode: { kind: string } }) => <div>weekly-schedule:{agendaMode.kind}</div>,
+}));
+
 vi.mock('./features/patients/PatientsWorkspace', () => ({
   PatientsWorkspace: ({
     patientsMode,
@@ -53,7 +57,7 @@ describe('App actor-aware shell', () => {
     useAuthSessionMock.mockReset();
   });
 
-  it('shows agenda and patients for doctors, defaulting to agenda', () => {
+  it('shows agenda, weekly schedule and patients for doctors, defaulting to agenda', () => {
     useAuthSessionMock.mockReturnValue(authSession({ role: 'doctor', professional_id: 'professional-1' }));
 
     const { container } = render(<App />);
@@ -61,13 +65,15 @@ describe('App actor-aware shell', () => {
     expect(screen.getAllByText('Centro operativo clínico').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Amicus')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
-    const doctorNavButtons = screen.getAllByRole('button', { name: /Agenda|Pacientes/ });
-    expect(doctorNavButtons).toHaveLength(2);
+    const doctorNavButtons = screen.getAllByRole('button', { name: /Agenda|Agenda semanal|Pacientes/ });
+    expect(doctorNavButtons).toHaveLength(3);
     expect(doctorNavButtons[0]).toHaveTextContent('Práctica propia');
     expect(doctorNavButtons[0]).toHaveTextContent('Agenda');
-    expect(doctorNavButtons[1]).toHaveTextContent('Seguimiento clínico');
-    expect(doctorNavButtons[1]).toHaveTextContent('Pacientes');
-    expect(screen.getByRole('button', { name: /Agenda/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(doctorNavButtons[1]).toHaveTextContent('Plantilla semanal');
+    expect(doctorNavButtons[1]).toHaveTextContent('Agenda semanal');
+    expect(doctorNavButtons[2]).toHaveTextContent('Seguimiento clínico');
+    expect(doctorNavButtons[2]).toHaveTextContent('Pacientes');
+    expect(doctorNavButtons[0]).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('schedule:doctor-own')).toBeInTheDocument();
 
     const shellPage = container.querySelector('.page-app-shell');
@@ -80,20 +86,35 @@ describe('App actor-aware shell', () => {
     expect(container.querySelector('.app-shell-brand-mark-fallback')).toHaveTextContent('A');
   });
 
-  it('shows agenda and patients for secretaries without directory shell symmetry', () => {
+  it('shows agenda, weekly schedule and patients for secretaries without directory shell symmetry', () => {
     useAuthSessionMock.mockReturnValue(authSession({ role: 'secretary' }));
 
     render(<App />);
 
-    const secretaryNavButtons = screen.getAllByRole('button', { name: /Agenda|Pacientes/ });
-    expect(secretaryNavButtons).toHaveLength(2);
+    const secretaryNavButtons = screen.getAllByRole('button', { name: /Agenda|Agenda semanal|Pacientes/ });
+    expect(secretaryNavButtons).toHaveLength(3);
     expect(secretaryNavButtons[0]).toHaveTextContent('Operación diaria');
-    expect(secretaryNavButtons[1]).toHaveTextContent('Atención operativa');
     expect(secretaryNavButtons[0]).toHaveTextContent('Agenda');
-    expect(secretaryNavButtons[1]).toHaveTextContent('Pacientes');
+    expect(secretaryNavButtons[1]).toHaveTextContent('Configuración visible');
+    expect(secretaryNavButtons[1]).toHaveTextContent('Agenda semanal');
+    expect(secretaryNavButtons[2]).toHaveTextContent('Atención operativa');
+    expect(secretaryNavButtons[2]).toHaveTextContent('Pacientes');
     expect(screen.getByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
     expect(screen.getByText('schedule:operational-shared')).toBeInTheDocument();
     expect(screen.queryByText('directory:setup-secretary-support')).not.toBeInTheDocument();
+  });
+
+  it('lets doctors reach the weekly schedule from the shell navigation', () => {
+    useAuthSessionMock.mockReturnValue(authSession({ role: 'doctor', professional_id: 'professional-1' }));
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Agenda semanal/i }));
+
+    expect(screen.getByRole('heading', { name: 'Agenda semanal' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Agenda semanal/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('weekly-schedule:doctor-own')).toBeInTheDocument();
+    expect(screen.queryByText('schedule:doctor-own')).not.toBeInTheDocument();
   });
 
   it('keeps the unauthenticated login surface unchanged', () => {
@@ -151,13 +172,15 @@ describe('App actor-aware shell', () => {
 
     render(<App />);
 
-    expect(screen.getAllByRole('button', { name: /Agenda|Pacientes/ })).toHaveLength(2);
+    const nav = screen.getByRole('navigation', { name: 'Áreas disponibles' });
+
+    expect(within(nav).getAllByRole('button')).toHaveLength(3);
     expect(screen.queryByText('directory:setup-secretary-support')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'schedule-open-directory' }));
 
     expect(screen.getByText('directory:setup-secretary-support')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /Agenda|Pacientes/ })).toHaveLength(2);
+    expect(within(nav).getAllByRole('button')).toHaveLength(3);
     expect(screen.queryAllByRole('button', { name: /Directorio/ })).toHaveLength(0);
   });
 

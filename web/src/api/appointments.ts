@@ -2,9 +2,15 @@ import { request } from './http';
 import type {
   Appointment,
   BulkCreateSlotsPayload,
+  CreateScheduleTemplateVersionPayload,
   CreateAppointmentPayload,
+  GetScheduleTemplateFilters,
   ListResponse,
+  ListScheduleTemplateVersionFilters,
+  ScheduleTemplate,
+  ScheduleTemplateVersion,
   Slot,
+  WeekAgenda,
 } from '../types/appointments';
 import { getOperationalWeekDays, normalizeOperationalTimeBands } from '../features/schedule/helpers';
 
@@ -21,6 +27,11 @@ type SlotFilters = {
   professional_id?: string;
   status?: string;
   date?: string;
+};
+
+type WeekAgendaFilters = {
+	professional_id: string;
+	week_start: string;
 };
 
 export type OperationalWeekDay = {
@@ -72,6 +83,36 @@ export function cancelAppointment(appointmentId: string) {
 	});
 }
 
+export function fetchWeekAgenda(filters: WeekAgendaFilters) {
+	return request<WeekAgenda>(APPOINTMENTS_API_BASE, '/agenda/week', { query: filters, auth: true });
+}
+
+export async function getScheduleTemplate(filters: GetScheduleTemplateFilters) {
+	const template = await request<ScheduleTemplate>(APPOINTMENTS_API_BASE, '/schedules', { query: filters, auth: true });
+	return normalizeScheduleTemplate(template);
+}
+
+export async function listScheduleTemplateVersions(filters: ListScheduleTemplateVersionFilters) {
+	const response = await request<ListResponse<ScheduleTemplateVersion>>(APPOINTMENTS_API_BASE, '/schedules/versions', {
+		query: filters,
+		auth: true,
+	});
+
+	return {
+		items: response.items.map(normalizeScheduleTemplateVersion),
+	};
+}
+
+export async function createScheduleTemplateVersion(payload: CreateScheduleTemplateVersionPayload) {
+	const template = await request<ScheduleTemplate>(APPOINTMENTS_API_BASE, '/schedules', {
+		method: 'POST',
+		body: payload,
+		auth: true,
+	});
+
+	return normalizeScheduleTemplate(template);
+}
+
 export async function listOperationalWeek(filters: Required<Pick<SlotFilters, 'professional_id' | 'date'>>) {
 	const weekDays = getOperationalWeekDays(filters.date);
 	const days = await Promise.all(
@@ -118,4 +159,22 @@ function compareBySlotOrder(slots: Slot[]) {
 
 		return leftOrder - rightOrder;
 	};
+}
+
+function normalizeScheduleTemplate(template: ScheduleTemplate): ScheduleTemplate {
+	return {
+		...template,
+		versions: template.versions?.map(normalizeScheduleTemplateVersion),
+	};
+}
+
+function normalizeScheduleTemplateVersion(version: ScheduleTemplateVersion): ScheduleTemplateVersion {
+	return {
+		...version,
+		effective_from: normalizeDateOnly(version.effective_from),
+	};
+}
+
+function normalizeDateOnly(value: string) {
+	return value.includes('T') ? value.slice(0, 10) : value;
 }
