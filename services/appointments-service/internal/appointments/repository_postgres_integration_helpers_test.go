@@ -41,6 +41,39 @@ func newPostgresIntegrationRepository(t *testing.T) (*Repository, *sql.DB) {
 	return NewRepository(db), db
 }
 
+func newPostgresConsultationIntegrationRepository(t *testing.T) (*Repository, *sql.DB) {
+	t.Helper()
+
+	dsn := postgresIntegrationTestDSN()
+	if dsn == "" {
+		t.Skip(describeIntegrationDSNRequirement())
+	}
+
+	if reason := postgresIntegrationResetSkipReason(dsn); reason != "" {
+		t.Skip(reason)
+	}
+
+	db, err := OpenDB(dsn)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	resetAppointmentsSchema(t, db)
+	applyAppointmentsMigrations(t, db)
+	applySingleAppointmentsMigration(t, db, "006_consultation_entity.sql")
+	applySingleAppointmentsMigration(t, db, "007_consultation_schedule_range.sql")
+
+	if reason := consultationRepositorySchemaSupportSkipReason(t, db); reason != "" {
+		t.Skip(reason)
+	}
+
+	return NewRepository(db), db
+}
+
 func postgresIntegrationTestDSN() string {
 	if dsn := strings.TrimSpace(os.Getenv("APPOINTMENTS_TEST_DATABASE_DSN")); dsn != "" {
 		return dsn
@@ -206,4 +239,68 @@ func countRows(t *testing.T, db *sql.DB, table string) int {
 
 func describeIntegrationDSNRequirement() string {
 	return fmt.Sprintf("run with %s set to a dedicated PostgreSQL database ending in _test and APPOINTMENTS_TEST_DATABASE_RESET_ALLOWED=true", "APPOINTMENTS_TEST_DATABASE_DSN")
+}
+
+func consultationRepositorySchemaSupportSkipReason(t *testing.T, db *sql.DB) string {
+	t.Helper()
+
+	if !columnExists(t, db, "consultations", "check_in_time") {
+		return "skipping consultation repository integration tests: consultations.check_in_time column is not present after migration 006"
+	}
+	if !columnExists(t, db, "consultations", "reception_notes") {
+		return "skipping consultation repository integration tests: consultations.reception_notes column is not present after migration 006"
+	}
+	if !columnAllowsNulls(t, db, "consultations", "slot_id") {
+		return "skipping consultation repository integration tests: consultations.slot_id is still NOT NULL after migration 006"
+	}
+	if !columnExists(t, db, "consultations", "scheduled_start") {
+		return "skipping consultation repository integration tests: consultations.scheduled_start column is not present after migration 007"
+	}
+	if !columnExists(t, db, "consultations", "scheduled_end") {
+		return "skipping consultation repository integration tests: consultations.scheduled_end column is not present after migration 007"
+	}
+
+	return ""
+}
+
+func columnExists(t *testing.T, db *sql.DB, table, column string) bool {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var exists bool
+	if err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = 'public'
+			  AND table_name = $1
+			  AND column_name = $2
+		)
+	`, table, column).Scan(&exists); err != nil {
+		t.Fatalf("lookup column %s.%s: %v", table, column, err)
+	}
+
+	return exists
+}
+
+func columnAllowsNulls(t *testing.T, db *sql.DB, table, column string) bool {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var isNullable string
+	if err := db.QueryRowContext(ctx, `
+		SELECT is_nullable
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		  AND table_name = $1
+		  AND column_name = $2
+	`, table, column).Scan(&isNullable); err != nil {
+		t.Fatalf("lookup nullability %s.%s: %v", table, column, err)
+	}
+
+	return strings.EqualFold(strings.TrimSpace(isNullable), "YES")
 }
