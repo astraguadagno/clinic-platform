@@ -1,0 +1,64 @@
+schema: spec-driven
+
+context: |
+  Monorepo con dos microservicios Go (`directory-service`, `appointments-service`) y frontend React/Vite en `web/`.
+  Backend HTTP con OpenAPI, persistencia PostgreSQL por servicio y Docker Compose local.
+  `appointments-service` está migrando de `appointments` legacy a `consultations`, templates, blocks y `/agenda/week`.
+  Frontend actual todavía consume parte del flujo legacy para agenda (`listSlots`/`listAppointments`).
+  CI actual corre `gofmt`, `go vet` y `go test` para ambos servicios Go; web usa Vitest + Testing Library + TypeScript.
+  Convención operativa: NO build después de cambios; priorizar cambios verificables y mínimos por capa.
+
+strict_tdd: true
+
+testing:
+  strict_tdd: true
+  detected_at: 2026-04-23
+  test_runner:
+    command: go test ./... && (cd web && npm test)
+    framework: go test + vitest
+  layers:
+    unit:
+      available: true
+      tool: go test / vitest
+    integration:
+      available: true
+      tool: net/http/httptest + postgres integration tests + testing-library/react
+    e2e:
+      available: false
+      tool: "—"
+  coverage:
+    available: true
+    command: go test -cover ./... && (cd web && vitest run --coverage)
+  quality_tools:
+    linter:
+      available: true
+      command: test -z "$(gofmt -l .)"
+    type_checker:
+      available: true
+      command: go vet ./... && (cd web && npm run typecheck)
+    formatter:
+      available: true
+      command: gofmt -w .
+
+rules:
+  proposal:
+    - Include rollback plan for risky schema or API changes
+    - Identify affected layers explicitly: DB, backend contract, frontend adapter, tests
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Document compatibility strategy when replacing legacy flows
+    - Keep adapters separate from React render components
+  tasks:
+    - Group tasks by phase (schema, backend, frontend, tests)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing Go and React/Vite patterns in the repo
+    - Do not add builds; prefer targeted test verification only
+  verify:
+    - Run targeted Go/Vitest tests when touching backend or web
+    - Compare implementation against every spec scenario and compatibility promise
+  archive:
+    - Warn before removing legacy appointment compatibility surfaces
