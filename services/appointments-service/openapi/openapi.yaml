@@ -128,6 +128,875 @@ paths:
                   value:
                     error: failed to create slots
 
+  /schedules:
+    get:
+      summary: Get active schedule for a professional and effective date
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProfessionalIDFilter'
+        - $ref: '#/components/parameters/EffectiveDateFilter'
+      responses:
+        '200':
+          description: Active schedule loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleTemplate'
+        '400':
+          description: Invalid schedule filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_schedule_filters:
+                  value:
+                    error: invalid schedule filters
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '404':
+          description: Schedule not found for the requested effective date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                schedule_not_found:
+                  value:
+                    error: schedule not found
+        '500':
+          description: Unexpected failure while loading the schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_load_schedule:
+                  value:
+                    error: failed to load schedule
+    post:
+      summary: Create a schedule template version
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScheduleRequest'
+      responses:
+        '201':
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleTemplate'
+        '400':
+          description: Invalid JSON body, invalid request payload, or missing professional reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json_body:
+                  value:
+                    error: invalid json body
+                invalid_schedule_request:
+                  value:
+                    error: invalid schedule request
+                professional_not_found:
+                  value:
+                    error: professional not found
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot create this schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                insufficient_role:
+                  value:
+                    error: insufficient role
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '409':
+          description: A schedule version already exists for the effective date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                duplicate_effective_date:
+                  value:
+                    error: schedule version already exists for effective date
+        '503':
+          description: Directory service unavailable while validating professional references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                directory_service_unavailable:
+                  value:
+                    error: directory service unavailable
+        '500':
+          description: Unexpected failure while creating the schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_create_schedule:
+                  value:
+                    error: failed to create schedule
+
+  /schedules/versions:
+    get:
+      summary: List all versions for a schedule template
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateIDFilter'
+      responses:
+        '200':
+          description: Schedule versions listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleTemplateVersionListResponse'
+        '400':
+          description: Invalid schedule filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_schedule_filters:
+                  value:
+                    error: invalid schedule filters
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '404':
+          description: Schedule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                schedule_not_found:
+                  value:
+                    error: schedule not found
+        '500':
+          description: Unexpected failure while loading schedule versions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_load_schedule_versions:
+                  value:
+                    error: failed to load schedule versions
+
+  /blocks:
+    get:
+      summary: List schedule blocks
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProfessionalIDFilter'
+        - $ref: '#/components/parameters/TemplateIDFilterOptional'
+        - $ref: '#/components/parameters/BlockScopeFilter'
+      responses:
+        '200':
+          description: Blocks listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleBlockListResponse'
+        '400':
+          description: Invalid block filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_block_filters:
+                  value:
+                    error: invalid block filters
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '500':
+          description: Unexpected failure while listing blocks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_list_blocks:
+                  value:
+                    error: failed to list blocks
+    post:
+      summary: Create a schedule block
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScheduleBlockRequest'
+      responses:
+        '201':
+          description: Block created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleBlock'
+        '400':
+          description: Invalid JSON body, invalid request payload, or missing professional reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json_body:
+                  value:
+                    error: invalid json body
+                invalid_block_request:
+                  value:
+                    error: invalid block request
+                professional_not_found:
+                  value:
+                    error: professional not found
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '409':
+          description: Block conflicts with the existing schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                block_conflict:
+                  value:
+                    error: block conflicts with existing schedule
+        '503':
+          description: Directory service unavailable while validating professional references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                directory_service_unavailable:
+                  value:
+                    error: directory service unavailable
+        '500':
+          description: Unexpected failure while creating the block
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_create_block:
+                  value:
+                    error: failed to create block
+
+  /blocks/{id}:
+    get:
+      summary: Get schedule block by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BlockIDPath'
+      responses:
+        '200':
+          description: Block loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleBlock'
+        '400':
+          description: Invalid block ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_block_id:
+                  value:
+                    error: invalid block id
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '404':
+          description: Block not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                block_not_found:
+                  value:
+                    error: block not found
+        '500':
+          description: Unexpected failure while loading the block
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_load_block:
+                  value:
+                    error: failed to load block
+    patch:
+      summary: Update a schedule block
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BlockIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScheduleBlockRequest'
+      responses:
+        '200':
+          description: Block updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleBlock'
+        '400':
+          description: Invalid JSON body, block ID, or request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json_body:
+                  value:
+                    error: invalid json body
+                invalid_block_id:
+                  value:
+                    error: invalid block id
+                invalid_block_request:
+                  value:
+                    error: invalid block request
+                professional_not_found:
+                  value:
+                    error: professional not found
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '404':
+          description: Block not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                block_not_found:
+                  value:
+                    error: block not found
+        '409':
+          description: Block conflicts with the existing schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                block_conflict:
+                  value:
+                    error: block conflicts with existing schedule
+        '503':
+          description: Directory service unavailable while validating professional references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                directory_service_unavailable:
+                  value:
+                    error: directory service unavailable
+        '500':
+          description: Unexpected failure while updating the block
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_update_block:
+                  value:
+                    error: failed to update block
+    delete:
+      summary: Delete a schedule block
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BlockIDPath'
+      responses:
+        '204':
+          description: Block deleted
+        '400':
+          description: Invalid block ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_block_id:
+                  value:
+                    error: invalid block id
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '404':
+          description: Block not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                block_not_found:
+                  value:
+                    error: block not found
+        '500':
+          description: Unexpected failure while deleting the block
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_delete_block:
+                  value:
+                    error: failed to delete block
+
+  /consultations:
+    get:
+      summary: Get consultation by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ConsultationIDFilter'
+      responses:
+        '200':
+          description: Consultation loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consultation'
+        '400':
+          description: Invalid consultation filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_consultation_filters:
+                  value:
+                    error: invalid consultation filters
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '404':
+          description: Consultation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                consultation_not_found:
+                  value:
+                    error: consultation not found
+        '500':
+          description: Unexpected failure while loading the consultation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_load_consultation:
+                  value:
+                    error: failed to load consultation
+    post:
+      summary: Create a consultation from a slot or explicit schedule range
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConsultationRequest'
+      responses:
+        '201':
+          description: Consultation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consultation'
+        '400':
+          description: Invalid JSON body, validation failure, or missing external references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json_body:
+                  value:
+                    error: invalid json body
+                invalid_consultation_request:
+                  value:
+                    error: invalid consultation request
+                professional_not_found:
+                  value:
+                    error: professional not found
+                patient_not_found:
+                  value:
+                    error: patient not found
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '409':
+          description: Consultation conflicts with the existing schedule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                consultation_conflict:
+                  value:
+                    error: consultation conflicts with existing schedule
+        '503':
+          description: Directory service unavailable while validating external references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                directory_service_unavailable:
+                  value:
+                    error: directory service unavailable
+        '500':
+          description: Unexpected failure while creating the consultation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_create_consultation:
+                  value:
+                    error: failed to create consultation
+    patch:
+      summary: Update consultation status
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConsultationStatusRequest'
+      responses:
+        '200':
+          description: Consultation updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consultation'
+        '400':
+          description: Invalid JSON body or invalid status transition request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json_body:
+                  value:
+                    error: invalid json body
+                invalid_consultation_status_update:
+                  value:
+                    error: invalid consultation status update
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot perform the requested consultation update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+                insufficient_role:
+                  value:
+                    error: insufficient role
+        '404':
+          description: Consultation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                consultation_not_found:
+                  value:
+                    error: consultation not found
+        '409':
+          description: Consultation update conflicts with the current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                status_conflict:
+                  value:
+                    error: consultation status update conflicts with existing state
+        '500':
+          description: Unexpected failure while updating the consultation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_update_consultation:
+                  value:
+                    error: failed to update consultation
+
+  /agenda/week:
+    get:
+      summary: Get merged week agenda for a professional
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProfessionalIDFilter'
+        - $ref: '#/components/parameters/WeekStartFilter'
+      responses:
+        '200':
+          description: Week agenda loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeekAgenda'
+        '400':
+          description: Invalid agenda week filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_agenda_week_filters:
+                  value:
+                    error: invalid agenda week filters
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    error: unauthorized
+        '403':
+          description: Authenticated actor cannot access the requested professional scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden_professional_scope:
+                  value:
+                    error: forbidden professional scope
+        '500':
+          description: Unexpected failure while loading the agenda week
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failed_to_load_agenda_week:
+                  value:
+                    error: failed to load agenda week
+
   /appointments:
     get:
       summary: List appointments
@@ -296,6 +1165,12 @@ paths:
                     error: failed to cancel appointment
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   parameters:
     ProfessionalIDFilter:
       name: professional_id
@@ -335,6 +1210,78 @@ components:
         type: string
         format: date
       description: Filter by UTC calendar date in YYYY-MM-DD format.
+
+    EffectiveDateFilter:
+      name: effective_date
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+      description: Effective date used to resolve the active schedule version.
+      example: 2026-05-10
+
+    TemplateIDFilter:
+      name: template_id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Schedule template identifier.
+      example: 550e8400-e29b-41d4-a716-446655440010
+
+    TemplateIDFilterOptional:
+      name: template_id
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Optional schedule template identifier.
+      example: 550e8400-e29b-41d4-a716-446655440010
+
+    BlockScopeFilter:
+      name: scope
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - single
+          - range
+          - template
+      description: Filter blocks by scope.
+
+    BlockIDPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Schedule block identifier.
+      example: 550e8400-e29b-41d4-a716-446655440501
+
+    ConsultationIDFilter:
+      name: id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Consultation identifier.
+      example: 550e8400-e29b-41d4-a716-446655440411
+
+    WeekStartFilter:
+      name: week_start
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+      description: UTC week start date in YYYY-MM-DD format.
+      example: 2026-04-06
 
   schemas:
     ErrorResponse:
@@ -450,6 +1397,478 @@ components:
         - items
       properties:
         items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Slot'
+
+    ScheduleRecurrenceWindow:
+      type: object
+      required:
+        - start_time
+        - end_time
+        - slot_duration_minutes
+      properties:
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '09:00'
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '12:00'
+        slot_duration_minutes:
+          type: integer
+          minimum: 1
+          example: 30
+
+    ScheduleRecurrence:
+      type: object
+      description: Weekly recurrence keyed by weekday name.
+      properties:
+        monday:
+          $ref: '#/components/schemas/ScheduleRecurrenceWindow'
+        tuesday:
+          $ref: '#/components/schemas/ScheduleRecurrenceWindow'
+        wednesday:
+          $ref: '#/components/schemas/ScheduleRecurrenceWindow'
+        thursday:
+          $ref: '#/components/schemas/ScheduleRecurrenceWindow'
+        friday:
+          $ref: '#/components/schemas/ScheduleRecurrenceWindow'
+        saturday:
+          $ref: '#/components/schemas/ScheduleRecurrenceWindow'
+        sunday:
+          $ref: '#/components/schemas/ScheduleRecurrenceWindow'
+      example:
+        monday:
+          start_time: '09:00'
+          end_time: '12:00'
+          slot_duration_minutes: 30
+        wednesday:
+          start_time: '10:00'
+          end_time: '13:00'
+          slot_duration_minutes: 30
+
+    ScheduleTemplateVersion:
+      type: object
+      required:
+        - id
+        - template_id
+        - version_number
+        - effective_from
+        - recurrence
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        template_id:
+          type: string
+          format: uuid
+        version_number:
+          type: integer
+          minimum: 1
+        effective_from:
+          type: string
+          format: date-time
+        recurrence:
+          $ref: '#/components/schemas/ScheduleRecurrence'
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    ScheduleTemplate:
+      type: object
+      required:
+        - id
+        - professional_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        professional_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleTemplateVersion'
+
+    ScheduleTemplateVersionListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleTemplateVersion'
+
+    CreateScheduleRequest:
+      type: object
+      required:
+        - professional_id
+        - effective_from
+        - recurrence
+      properties:
+        professional_id:
+          type: string
+          format: uuid
+        effective_from:
+          type: string
+          format: date
+        recurrence:
+          $ref: '#/components/schemas/ScheduleRecurrence'
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    Consultation:
+      type: object
+      required:
+        - id
+        - professional_id
+        - patient_id
+        - status
+        - source
+        - scheduled_start
+        - scheduled_end
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        slot_id:
+          type: string
+          format: uuid
+          nullable: true
+        professional_id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - scheduled
+            - checked_in
+            - completed
+            - cancelled
+            - no_show
+        source:
+          type: string
+          enum:
+            - online
+            - secretary
+            - doctor
+        scheduled_start:
+          type: string
+          format: date-time
+        scheduled_end:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          nullable: true
+        check_in_time:
+          type: string
+          format: date-time
+          nullable: true
+        reception_notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateConsultationRequest:
+      type: object
+      required:
+        - professional_id
+        - patient_id
+        - source
+      properties:
+        slot_id:
+          type: string
+          format: uuid
+          nullable: true
+        professional_id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum:
+            - online
+            - secretary
+            - doctor
+        scheduled_start:
+          type: string
+          format: date-time
+          nullable: true
+        scheduled_end:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      description: Provide either `slot_id` or the pair `scheduled_start` + `scheduled_end`.
+      oneOf:
+        - required:
+            - slot_id
+        - required:
+            - scheduled_start
+            - scheduled_end
+
+    UpdateConsultationStatusRequest:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - scheduled
+            - checked_in
+            - completed
+            - cancelled
+            - no_show
+        source:
+          type: string
+          enum:
+            - online
+            - secretary
+            - doctor
+          nullable: true
+          description: Optional immutable source echo; changing it is rejected.
+        check_in_time:
+          type: string
+          format: date-time
+          nullable: true
+        reception_notes:
+          type: string
+          nullable: true
+
+    ScheduleBlock:
+      type: object
+      required:
+        - id
+        - professional_id
+        - scope
+        - start_time
+        - end_time
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        professional_id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum:
+            - single
+            - range
+            - template
+        block_date:
+          type: string
+          format: date-time
+          nullable: true
+        start_date:
+          type: string
+          format: date-time
+          nullable: true
+        end_date:
+          type: string
+          format: date-time
+          nullable: true
+        day_of_week:
+          type: integer
+          minimum: 1
+          maximum: 7
+          nullable: true
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        template_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ScheduleBlockListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleBlock'
+
+    CreateScheduleBlockRequest:
+      type: object
+      required:
+        - professional_id
+        - scope
+        - start_time
+        - end_time
+      properties:
+        professional_id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum:
+            - single
+            - range
+            - template
+        block_date:
+          type: string
+          format: date
+          nullable: true
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        day_of_week:
+          type: integer
+          minimum: 1
+          maximum: 7
+          nullable: true
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        template_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    UpdateScheduleBlockRequest:
+      type: object
+      required:
+        - scope
+        - start_time
+        - end_time
+      properties:
+        professional_id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum:
+            - single
+            - range
+            - template
+        block_date:
+          type: string
+          format: date
+          nullable: true
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        day_of_week:
+          type: integer
+          minimum: 1
+          maximum: 7
+          nullable: true
+        start_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        end_time:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        template_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    WeekAgenda:
+      type: object
+      required:
+        - professional_id
+        - week_start
+        - templates
+        - blocks
+        - consultations
+        - slots
+      properties:
+        professional_id:
+          type: string
+          format: uuid
+        week_start:
+          type: string
+          format: date
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleTemplate'
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleBlock'
+        consultations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Consultation'
+        slots:
           type: array
           items:
             $ref: '#/components/schemas/Slot'

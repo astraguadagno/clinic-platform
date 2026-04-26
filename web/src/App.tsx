@@ -6,6 +6,7 @@ import { LoginScreen } from './features/auth/LoginScreen';
 import { DirectoryDemo } from './features/directory/DirectoryDemo';
 import { PatientsWorkspace } from './features/patients/PatientsWorkspace';
 import { ScheduleDemo } from './features/schedule/ScheduleDemo';
+import { WeeklyScheduleWorkspace } from './features/schedule/WeeklyScheduleWorkspace';
 
 export default function App() {
   const auth = useAuthSession();
@@ -88,6 +89,10 @@ export default function App() {
 
     if (normalizedActiveSurface === 'directory') {
       return <DirectoryDemo directoryMode={capabilities.directoryMode} onSessionInvalid={auth.logout} />;
+    }
+
+    if (normalizedActiveSurface === 'weekly-schedule') {
+      return <WeeklyScheduleWorkspace agendaMode={capabilities.agendaMode} onSessionInvalid={auth.logout} />;
     }
 
     if (normalizedActiveSurface === 'patients') {
