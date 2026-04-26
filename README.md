@@ -67,21 +67,25 @@ Qué hace este arranque:
 - espera a que cada DB esté saludable y a que el migrador de appointments termine OK antes de levantar su servicio HTTP
 
 > Importante: los scripts de inicialización corren solamente cuando el volumen de la base está vacío.
-> Las migraciones `002_prevent_availability_slot_overlaps.sql` y `003_allow_rebooking_cancelled_slots.sql` también se ejecutan sobre bases existentes mediante el servicio `appointments-db-migrator`.
+> Las migraciones incrementales de `appointments-service` (`002` a `007`) también se ejecutan sobre bases existentes mediante el servicio `appointments-db-migrator`.
 
 ### Migraciones incrementales en appointments
 
 Las reglas incrementales actuales de `appointments-service` se aplican de dos formas:
 
 - en bootstrap limpio, porque `001_init.sql` crea el esquema base y luego corre el migrador one-shot
-- en bases ya existentes, porque `appointments-db-migrator` ejecuta `002_prevent_availability_slot_overlaps.sql` y `003_allow_rebooking_cancelled_slots.sql` en cada arranque
+- en bases ya existentes, porque `appointments-db-migrator` ejecuta `002_prevent_availability_slot_overlaps.sql`, `003_allow_rebooking_cancelled_slots.sql`, `004_schedule_templates.sql`, `005_schedule_blocks.sql`, `006_consultation_entity.sql` y `007_consultation_schedule_range.sql` en cada arranque
 
-Estas migraciones son idempotentes: si la regla ya existe, no intentan recrearla.
+Las migraciones `002` y `003` son idempotentes por SQL. Las `004` a `007` se ejecutan de forma condicional desde el migrador para no recrear tablas/columnas ni repetir la migración de `appointments` a `consultations`.
 
 Hoy cubren al menos:
 
 - no solapamiento real de slots por profesional (`002`)
 - posibilidad de volver a reservar un slot después de cancelar un appointment, manteniendo unicidad solo para appointments `booked` (`003`)
+- templates de agenda versionados por profesional (`004`)
+- bloqueos de agenda por fecha, rango o template (`005`)
+- evolución de `appointments` a `consultations` con estados y metadatos operativos (`006`)
+- rango horario propio de `consultations` para soportar consultas con o sin slot (`007`)
 
 Limitación importante:
 
