@@ -442,6 +442,138 @@ func TestRepositoryIntegrationCreateAppointmentRejectsDoubleBookingForSameSlot(t
 	}
 }
 
+func TestRepositoryIntegrationCreateAppointmentRejectsSlotsCoveredByActiveScheduleBlocks(t *testing.T) {
+	repo, db := newPostgresIntegrationRepository(t)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name           string
+		professionalID string
+		patientID      string
+		date           string
+		startTime      string
+		endTime        string
+		createBlock    func(t *testing.T, repo *Repository, ctx context.Context, professionalID string)
+	}{
+		{
+			name:           "single block rejects booking",
+			professionalID: "550e8400-e29b-41d4-a716-446655440023",
+			patientID:      "550e8400-e29b-41d4-a716-446655440024",
+			date:           "2026-04-14",
+			startTime:      "09:00",
+			endTime:        "09:30",
+			createBlock: func(t *testing.T, repo *Repository, ctx context.Context, professionalID string) {
+				t.Helper()
+
+				_, err := repo.CreateScheduleBlock(ctx, CreateScheduleBlockParams{
+					ProfessionalID: professionalID,
+					Scope:          "single",
+					BlockDate:      stringPtr("2026-04-14"),
+					StartTime:      "09:00",
+					EndTime:        "09:30",
+				})
+				if err != nil {
+					t.Fatalf("create single block: %v", err)
+				}
+			},
+		},
+		{
+			name:           "range block rejects booking",
+			professionalID: "550e8400-e29b-41d4-a716-446655440025",
+			patientID:      "550e8400-e29b-41d4-a716-446655440026",
+			date:           "2026-04-15",
+			startTime:      "10:00",
+			endTime:        "10:30",
+			createBlock: func(t *testing.T, repo *Repository, ctx context.Context, professionalID string) {
+				t.Helper()
+
+				_, err := repo.CreateScheduleBlock(ctx, CreateScheduleBlockParams{
+					ProfessionalID: professionalID,
+					Scope:          "range",
+					StartDate:      stringPtr("2026-04-14"),
+					EndDate:        stringPtr("2026-04-16"),
+					StartTime:      "09:45",
+					EndTime:        "10:45",
+				})
+				if err != nil {
+					t.Fatalf("create range block: %v", err)
+				}
+			},
+		},
+		{
+			name:           "template block rejects booking when active template matches",
+			professionalID: "550e8400-e29b-41d4-a716-446655440027",
+			patientID:      "550e8400-e29b-41d4-a716-446655440028",
+			date:           "2026-04-20",
+			startTime:      "08:00",
+			endTime:        "08:30",
+			createBlock: func(t *testing.T, repo *Repository, ctx context.Context, professionalID string) {
+				t.Helper()
+
+				template, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+					ProfessionalID: professionalID,
+					EffectiveFrom:  "2026-04-01",
+					Recurrence:     json.RawMessage(`{"monday":{"start_time":"08:00","end_time":"09:00","slot_duration_minutes":30}}`),
+				})
+				if err != nil {
+					t.Fatalf("create template: %v", err)
+				}
+
+				_, err = repo.CreateScheduleBlock(ctx, CreateScheduleBlockParams{
+					ProfessionalID: professionalID,
+					Scope:          "template",
+					DayOfWeek:      intPtr(1),
+					StartTime:      "08:00",
+					EndTime:        "08:30",
+					TemplateID:     &template.ID,
+				})
+				if err != nil {
+					t.Fatalf("create template block: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			slots, err := repo.CreateSlotsBulk(ctx, BulkCreateSlotsParams{
+				ProfessionalID:      tt.professionalID,
+				Date:                tt.date,
+				StartTime:           tt.startTime,
+				EndTime:             tt.endTime,
+				SlotDurationMinutes: 30,
+			})
+			if err != nil {
+				t.Fatalf("create slots: %v", err)
+			}
+			if len(slots) != 1 {
+				t.Fatalf("slots len = %d, want 1", len(slots))
+			}
+
+			tt.createBlock(t, repo, ctx, tt.professionalID)
+
+			_, err = repo.CreateAppointment(ctx, CreateAppointmentParams{
+				SlotID:         slots[0].ID,
+				PatientID:      tt.patientID,
+				ProfessionalID: tt.professionalID,
+			})
+			if !errors.Is(err, ErrConflict) {
+				t.Fatalf("create appointment err = %v, want %v", err, ErrConflict)
+			}
+
+			if got := countAppointments(t, db); got != 0 {
+				t.Fatalf("appointments persisted = %d, want 0", got)
+			}
+
+			persistedSlot := fetchSlotByID(t, db, slots[0].ID)
+			if persistedSlot.Status != "available" {
+				t.Fatalf("slot status after blocked booking attempt = %q, want available", persistedSlot.Status)
+			}
+		})
+	}
+}
+
 func TestRepositoryIntegrationCreateAppointmentConcurrentSameSlotReturnsOneSuccessAndOneConflict(t *testing.T) {
 	repo, db := newPostgresIntegrationRepository(t)
 

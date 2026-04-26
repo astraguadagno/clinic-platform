@@ -38,3 +38,12 @@ type ScheduleBlock struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
+
+type WeekAgenda struct {
+	ProfessionalID string             `json:"professional_id"`
+	WeekStart      string             `json:"week_start"`
+	Templates      []ScheduleTemplate `json:"templates"`
+	Blocks         []ScheduleBlock    `json:"blocks"`
+	Consultations  []Consultation     `json:"consultations"`
+	Slots          []AvailabilitySlot `json:"slots"`
+}
