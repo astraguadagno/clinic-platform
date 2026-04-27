@@ -99,6 +99,96 @@ func TestValidateAppointmentParams(t *testing.T) {
 	}
 }
 
+func TestCreateAppointmentRejectsSlotsCoveredByActiveScheduleBlocks(t *testing.T) {
+	t.Parallel()
+
+	day := time.Date(2026, time.April, 20, 9, 0, 0, 0, time.UTC)
+	templateID := "550e8400-e29b-41d4-a716-446655440090"
+
+	tests := []struct {
+		name                 string
+		slotStart            time.Time
+		slotEnd              time.Time
+		activeTemplateRow    []driver.Value
+		scheduleBlockResults [][]driver.Value
+	}{
+		{
+			name:      "single block",
+			slotStart: day,
+			slotEnd:   day.Add(30 * time.Minute),
+			scheduleBlockResults: [][]driver.Value{
+				newScheduleBlockRow(
+					"550e8400-e29b-41d4-a716-446655440091",
+					"550e8400-e29b-41d4-a716-446655440002",
+					"single",
+					datePtr(day), nil, nil, nil,
+					"09:00", "09:30",
+					nil,
+					day, day,
+				),
+			},
+		},
+		{
+			name:      "range block",
+			slotStart: day,
+			slotEnd:   day.Add(30 * time.Minute),
+			scheduleBlockResults: [][]driver.Value{
+				newScheduleBlockRow(
+					"550e8400-e29b-41d4-a716-446655440092",
+					"550e8400-e29b-41d4-a716-446655440002",
+					"range",
+					nil, datePtr(day.AddDate(0, 0, -1)), datePtr(day.AddDate(0, 0, 1)), nil,
+					"08:45", "09:15",
+					nil,
+					day, day,
+				),
+			},
+		},
+		{
+			name:              "template block for active template",
+			slotStart:         day,
+			slotEnd:           day.Add(30 * time.Minute),
+			activeTemplateRow: []driver.Value{templateID},
+			scheduleBlockResults: [][]driver.Value{
+				newScheduleBlockRow(
+					"550e8400-e29b-41d4-a716-446655440094",
+					"550e8400-e29b-41d4-a716-446655440002",
+					"template",
+					nil, nil, nil, intPtr(1),
+					"09:00", "09:30",
+					&templateID,
+					day, day,
+				),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := []scriptedQueryResult{{
+				row: newSlotRow("550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440002", tt.slotStart, tt.slotEnd),
+			}}
+			if tt.activeTemplateRow != nil {
+				results = append(results, scriptedQueryResult{row: tt.activeTemplateRow})
+			} else {
+				results = append(results, scriptedQueryResult{err: sql.ErrNoRows})
+			}
+			results = append(results, scriptedQueryResult{rows: tt.scheduleBlockResults})
+
+			repo := NewRepository(newScriptedDB(t, results))
+
+			_, err := repo.CreateAppointment(context.Background(), CreateAppointmentParams{
+				SlotID:         "550e8400-e29b-41d4-a716-446655440000",
+				PatientID:      "550e8400-e29b-41d4-a716-446655440001",
+				ProfessionalID: "550e8400-e29b-41d4-a716-446655440002",
+			})
+			if !errors.Is(err, ErrConflict) {
+				t.Fatalf("err = %v, want %v", err, ErrConflict)
+			}
+		})
+	}
+}
+
 func TestCreateSlotsBulkReturnsConflictOnRealOverlap(t *testing.T) {
 	t.Parallel()
 
@@ -170,8 +260,9 @@ func TestGetAppointmentByIDReturnsAppointment(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.April, 10, 9, 0, 0, 0, time.UTC)
-	repo := NewRepository(newScriptedDB(t, []scriptedQueryResult{{
-		row: newAppointmentRow(
+	repo := NewRepository(newScriptedDB(t, []scriptedQueryResult{
+		{row: []driver.Value{"appointments"}},
+		{row: newAppointmentRow(
 			"550e8400-e29b-41d4-a716-446655440099",
 			"550e8400-e29b-41d4-a716-446655440010",
 			"550e8400-e29b-41d4-a716-446655440011",
@@ -180,8 +271,8 @@ func TestGetAppointmentByIDReturnsAppointment(t *testing.T) {
 			now,
 			now,
 			nil,
-		),
-	}}))
+		)},
+	}))
 
 	appointment, err := repo.GetAppointmentByID(context.Background(), "550e8400-e29b-41d4-a716-446655440099")
 	if err != nil {
@@ -564,6 +655,8 @@ func TestDeleteScheduleBlockReturnsNotFoundWhenMissing(t *testing.T) {
 func stringPtr(value string) *string { return &value }
 
 func intPtr(value int) *int { return &value }
+
+func datePtr(value time.Time) *time.Time { return &value }
 
 func newScheduleBlockRow(id, professionalID, scope string, blockDate, startDate, endDate *time.Time, dayOfWeek *int, startTime, endTime string, templateID *string, createdAt, updatedAt time.Time) []driver.Value {
 	var blockDateValue any

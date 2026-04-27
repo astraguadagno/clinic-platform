@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelAppointment, createAppointment, createSlotsBulk, listOperationalWeek, type OperationalWeekDay } from '../../api/appointments';
+import { cancelAppointment, createAppointment, createSlotsBulk, fetchWeekAgenda } from '../../api/appointments';
 import { listPatients, listProfessionals } from '../../api/directory';
 import { type AgendaMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import type { Appointment, BulkCreateSlotsPayload, Slot } from '../../types/appointments';
 import type { Patient, Professional } from '../../types/directory';
+import { buildScheduleBoardModel, type ScheduleBoardAppointment, type ScheduleBoardDay } from './agendaAdapter';
 import { filterPatients, normalizePatientSearchValue } from '../patient-search/matching';
 import {
   formatDateInputValue,
@@ -30,7 +31,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
   const [weekStart, setWeekStart] = useState(getUtcWeekStart(initialSelectedDate));
-  const [days, setDays] = useState<OperationalWeekDay[]>([]);
+  const [days, setDays] = useState<ScheduleBoardDay[]>([]);
   const [timeBands, setTimeBands] = useState<string[]>([]);
   const [focusedBand, setFocusedBand] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState('');
@@ -160,18 +161,19 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
       setErrorMessage('');
       setAccessDeniedMessage('');
 
-      const nextWeek = await listOperationalWeek({ professional_id: selectedProfessionalId, date: weekStart });
-      const nextSlots = nextWeek.days.flatMap((day) => day.slots);
+      const nextWeek = await fetchWeekAgenda({ professional_id: selectedProfessionalId, week_start: weekStart });
+      const board = buildScheduleBoardModel(nextWeek);
+      const nextSlots = board.days.flatMap((day) => day.slots);
 
-      setWeekStart(nextWeek.weekStart);
-      setDays(nextWeek.days);
-      setTimeBands(nextWeek.timeBands);
+      setWeekStart(board.weekStart);
+      setDays(board.days);
+      setTimeBands(board.timeBands);
       setSelectedDate((current) => {
-        if (nextWeek.days.some((day) => day.date === current)) {
+        if (board.days.some((day) => day.date === current)) {
           return current;
         }
 
-        return nextWeek.days[0]?.date ?? current;
+        return board.days[0]?.date ?? current;
       });
       setSelectedSlotId((current) =>
         nextSlots.find((slot) => slot.id === releasedSlotIdRef.current && slot.status === 'available')?.id ||
@@ -179,7 +181,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
         nextSlots.find((slot) => slot.status === 'available')?.id ||
         '',
       );
-      setFocusedBand((current) => current || nextWeek.timeBands[0] || '');
+      setFocusedBand((current) => current || board.timeBands[0] || '');
     } catch (error) {
       const nextError = handleApiFailure(error, 'No se pudo cargar la agenda seleccionada.');
       setErrorMessage(nextError.errorMessage);
@@ -356,6 +358,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
         </div>
       )}
 
+      <>
       <SectionCard className="card-accent schedule-context-bar">
         <div className="schedule-context-bar-main">
           <div>
@@ -563,7 +566,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
                               {selectedProfessional.first_name} {selectedProfessional.last_name} · {formatLongDate(day.date)}
                             </small>
                           ) : null}
-                          <span className={`pill${appointment.status === 'cancelled' ? ' cancelled' : ''}`}>{appointment.status === 'cancelled' ? 'Cancelado' : 'Reservado'}</span>
+                          <span className={`pill${appointment.status === 'cancelled' ? ' cancelled' : ''}`}>{appointment.status_label}</span>
                           <button
                             className="button ghost"
                             type="button"
@@ -572,7 +575,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
                               setFocusedBand(band);
                               void handleCancelAppointment(appointment.id);
                             }}
-                            disabled={appointment.status === 'cancelled' || cancellingAppointmentId === appointment.id}
+                            disabled={!appointment.can_cancel || appointment.status === 'cancelled' || cancellingAppointmentId === appointment.id}
                           >
                             {cancellingAppointmentId === appointment.id ? 'Cancelando...' : 'Cancelar'}
                           </button>
@@ -728,6 +731,7 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
           </section>
         </div>
       ) : null}
+      </>
     </PageContainer>
   );
 }

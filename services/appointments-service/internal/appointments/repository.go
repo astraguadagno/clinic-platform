@@ -26,6 +26,10 @@ type Repository struct {
 	db *sql.DB
 }
 
+type appointmentRelationQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 type BulkCreateSlotsParams struct {
 	ProfessionalID      string `json:"professional_id"`
 	Date                string `json:"date"`
@@ -74,6 +78,27 @@ type Appointment struct {
 	CancelledAt    *time.Time `json:"cancelled_at,omitempty"`
 }
 
+type CreateConsultationParams struct {
+	SlotID         *string            `json:"slot_id,omitempty"`
+	ProfessionalID string             `json:"professional_id"`
+	PatientID      string             `json:"patient_id"`
+	Source         ConsultationSource `json:"source"`
+	ScheduledStart *time.Time         `json:"scheduled_start,omitempty"`
+	ScheduledEnd   *time.Time         `json:"scheduled_end,omitempty"`
+	Notes          *string            `json:"notes,omitempty"`
+}
+
+type UpdateConsultationStatusParams struct {
+	Status         ConsultationStatus `json:"status"`
+	CheckInTime    *time.Time         `json:"check_in_time,omitempty"`
+	ReceptionNotes *string            `json:"reception_notes,omitempty"`
+}
+
+type ConsultationFilters struct {
+	ProfessionalID string
+	WeekStart      string
+}
+
 type CreateTemplateParams struct {
 	ProfessionalID string          `json:"professional_id"`
 	EffectiveFrom  string          `json:"effective_from"`
@@ -119,6 +144,42 @@ func ValidateBulkCreateSlotsParams(params BulkCreateSlotsParams) error {
 
 func ValidateCreateAppointmentParams(params CreateAppointmentParams) error {
 	return validateAppointmentParams(params)
+}
+
+func ValidateScheduleBlockParams(params CreateScheduleBlockParams) (CreateScheduleBlockParams, error) {
+	validated, err := validateScheduleBlockParams(params.ProfessionalID, params.Scope, params.BlockDate, params.StartDate, params.EndDate, params.DayOfWeek, params.StartTime, params.EndTime, params.TemplateID)
+	if err != nil {
+		return CreateScheduleBlockParams{}, err
+	}
+
+	result := CreateScheduleBlockParams{
+		ProfessionalID: validated.professionalID,
+		Scope:          validated.scope,
+		StartTime:      validated.startTime,
+		EndTime:        validated.endTime,
+	}
+	if validated.blockDate != nil {
+		value := validated.blockDate.Format("2006-01-02")
+		result.BlockDate = &value
+	}
+	if validated.startDate != nil {
+		value := validated.startDate.Format("2006-01-02")
+		result.StartDate = &value
+	}
+	if validated.endDate != nil {
+		value := validated.endDate.Format("2006-01-02")
+		result.EndDate = &value
+	}
+	if validated.dayOfWeek != nil {
+		day := *validated.dayOfWeek
+		result.DayOfWeek = &day
+	}
+	if validated.templateID != nil {
+		value := *validated.templateID
+		result.TemplateID = &value
+	}
+
+	return result, nil
 }
 
 func NewRepository(db *sql.DB) *Repository {
@@ -264,12 +325,31 @@ func (r *Repository) CreateAppointment(ctx context.Context, params CreateAppoint
 	if slot.ProfessionalID != strings.TrimSpace(params.ProfessionalID) {
 		return Appointment{}, ErrValidation
 	}
+	if err := ensureSlotIsNotBlocked(ctx, tx, slot); err != nil {
+		return Appointment{}, err
+	}
 
-	appointmentRow := tx.QueryRowContext(ctx, `
+	useConsultations, err := usesConsultationAppointmentStore(ctx, tx)
+	if err != nil {
+		return Appointment{}, err
+	}
+
+	appointmentQuery := `
 		INSERT INTO appointments (slot_id, professional_id, patient_id)
 		VALUES ($1, $2, $3)
 		RETURNING id, slot_id, professional_id, patient_id, status, created_at, updated_at, cancelled_at
-	`, strings.TrimSpace(params.SlotID), strings.TrimSpace(params.ProfessionalID), strings.TrimSpace(params.PatientID))
+	`
+	if useConsultations {
+		appointmentQuery = `
+			INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end)
+			SELECT $1, $2, $3, 'secretary', start_time, end_time
+			FROM availability_slots
+			WHERE id = $1 AND professional_id = $2
+			RETURNING id, slot_id, professional_id, patient_id, CASE WHEN status = 'scheduled' THEN 'booked' ELSE status END, created_at, updated_at, cancelled_at
+		`
+	}
+
+	appointmentRow := tx.QueryRowContext(ctx, appointmentQuery, strings.TrimSpace(params.SlotID), strings.TrimSpace(params.ProfessionalID), strings.TrimSpace(params.PatientID))
 
 	appointment, err := scanAppointment(appointmentRow)
 	if err != nil {
@@ -295,10 +375,222 @@ func (r *Repository) CreateAppointment(ctx context.Context, params CreateAppoint
 	return appointment, nil
 }
 
+func ensureSlotIsNotBlocked(ctx context.Context, tx *sql.Tx, slot AvailabilitySlot) error {
+	activeTemplateID, err := activeTemplateIDForSlot(ctx, tx, slot.ProfessionalID, slot.StartTime)
+	if err != nil {
+		return err
+	}
+
+	blocks, err := listScheduleBlocksForProfessional(ctx, tx, slot.ProfessionalID)
+	if err != nil {
+		return err
+	}
+
+	blocked, err := isBlocked(blocks, ScheduleTemplate{
+		ID:             activeTemplateID,
+		ProfessionalID: slot.ProfessionalID,
+	}, slot.StartTime, slot.StartTime, slot.EndTime)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return ErrConflict
+	}
+
+	return nil
+}
+
+func activeTemplateIDForSlot(ctx context.Context, tx *sql.Tx, professionalID string, slotStart time.Time) (string, error) {
+	var templateID string
+	err := tx.QueryRowContext(ctx, `
+		SELECT v.template_id
+		FROM schedule_template_versions v
+		JOIN schedule_templates t ON t.id = v.template_id
+		WHERE t.professional_id = $1
+		  AND v.effective_from <= $2
+		ORDER BY v.effective_from DESC, v.version_number DESC
+		LIMIT 1
+	`, professionalID, slotStart.Format("2006-01-02")).Scan(&templateID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return templateID, nil
+}
+
+func listScheduleBlocksForProfessional(ctx context.Context, tx *sql.Tx, professionalID string) ([]ScheduleBlock, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, professional_id, scope, block_date, start_date, end_date, day_of_week, TO_CHAR(start_time, 'HH24:MI'), TO_CHAR(end_time, 'HH24:MI'), template_id, created_at, updated_at
+		FROM schedule_blocks
+		WHERE professional_id = $1
+		ORDER BY COALESCE(block_date, start_date) NULLS LAST, day_of_week NULLS LAST, start_time, created_at
+	`, professionalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	blocks := make([]ScheduleBlock, 0)
+	for rows.Next() {
+		block, scanErr := scanScheduleBlock(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		blocks = append(blocks, block)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return blocks, nil
+}
+
+func (r *Repository) CreateConsultation(ctx context.Context, params CreateConsultationParams) (Consultation, error) {
+	validated, err := validateCreateConsultationParams(params)
+	if err != nil {
+		return Consultation{}, err
+	}
+
+	query := `
+		INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
+	`
+	args := []any{validated.slotID, validated.professionalID, validated.patientID, validated.source, validated.scheduledStart, validated.scheduledEnd, validated.notes}
+	if validated.slotID != nil {
+		query = `
+			INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
+			SELECT $1, $2, $3, $4, start_time, end_time, $5
+			FROM availability_slots
+			WHERE id = $1 AND professional_id = $2
+			RETURNING id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
+		`
+		args = []any{validated.slotID, validated.professionalID, validated.patientID, validated.source, validated.notes}
+	}
+
+	consultation, err := scanConsultation(r.db.QueryRowContext(ctx, query, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Consultation{}, ErrNotFound
+	}
+	if err != nil {
+		if isConflictViolation(err) {
+			return Consultation{}, ErrConflict
+		}
+		return Consultation{}, err
+	}
+
+	return consultation, nil
+}
+
+func (r *Repository) GetConsultation(ctx context.Context, consultationID string) (Consultation, error) {
+	validatedID, err := validateConsultationID(consultationID)
+	if err != nil {
+		return Consultation{}, err
+	}
+
+	consultation, err := scanConsultation(r.db.QueryRowContext(ctx, `
+		SELECT id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
+		FROM consultations
+		WHERE id = $1
+	`, validatedID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Consultation{}, ErrNotFound
+	}
+	if err != nil {
+		return Consultation{}, err
+	}
+
+	return consultation, nil
+}
+
+func (r *Repository) ListConsultations(ctx context.Context, filters ConsultationFilters) ([]Consultation, error) {
+	professionalID, weekStart, err := validateConsultationFilters(filters)
+	if err != nil {
+		return nil, err
+	}
+	weekEnd := weekStart.AddDate(0, 0, 7)
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
+		FROM consultations
+		WHERE professional_id = $1
+		  AND scheduled_end > $2
+		  AND scheduled_start < $3
+		ORDER BY scheduled_start, created_at, id
+	`, professionalID, weekStart, weekEnd)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	consultations := make([]Consultation, 0)
+	for rows.Next() {
+		consultation, scanErr := scanConsultation(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		consultations = append(consultations, consultation)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return consultations, nil
+}
+
+func (r *Repository) UpdateConsultationStatus(ctx context.Context, consultationID string, params UpdateConsultationStatusParams) (Consultation, error) {
+	validatedID, validated, err := validateUpdateConsultationStatusParams(consultationID, params)
+	if err != nil {
+		return Consultation{}, err
+	}
+
+	consultation, err := scanConsultation(r.db.QueryRowContext(ctx, `
+		UPDATE consultations
+		SET status = $2,
+		    check_in_time = $3,
+		    reception_notes = $4,
+		    cancelled_at = CASE
+		        WHEN $2 = 'cancelled' THEN COALESCE(cancelled_at, NOW())
+		        ELSE NULL
+		    END,
+		    updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
+	`, validatedID, validated.status, validated.checkInTime, validated.receptionNotes))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Consultation{}, ErrNotFound
+	}
+	if err != nil {
+		if isConflictViolation(err) {
+			return Consultation{}, ErrConflict
+		}
+		return Consultation{}, err
+	}
+
+	return consultation, nil
+}
+
 func (r *Repository) ListAppointments(ctx context.Context, filters AppointmentFilters) ([]Appointment, error) {
+	useConsultations, err := usesConsultationAppointmentStore(ctx, r.db)
+	if err != nil {
+		return nil, err
+	}
+
+	statusColumn := "status"
+	tableName := "appointments"
+	if useConsultations {
+		statusColumn = legacyAppointmentStatusSelectSQL("status")
+		tableName = "consultations"
+	}
+
 	baseQuery := `
-		SELECT id, slot_id, professional_id, patient_id, status, created_at, updated_at, cancelled_at
-		FROM appointments
+		SELECT id, slot_id, professional_id, patient_id, ` + statusColumn + `, created_at, updated_at, cancelled_at
+		FROM ` + tableName + `
 	`
 
 	where := make([]string, 0)
@@ -314,7 +606,7 @@ func (r *Repository) ListAppointments(ctx context.Context, filters AppointmentFi
 	}
 	if filters.Status != "" {
 		where = append(where, fmt.Sprintf("status = $%d", len(args)+1))
-		args = append(args, strings.TrimSpace(filters.Status))
+		args = append(args, legacyAppointmentStatusFilter(strings.TrimSpace(filters.Status), useConsultations))
 	}
 	if filters.Date != "" {
 		date, err := time.Parse("2006-01-02", strings.TrimSpace(filters.Date))
@@ -360,11 +652,25 @@ func (r *Repository) GetAppointmentByID(ctx context.Context, appointmentID strin
 		return Appointment{}, ErrValidation
 	}
 
-	appointment, err := scanAppointment(r.db.QueryRowContext(ctx, `
+	useConsultations, err := usesConsultationAppointmentStore(ctx, r.db)
+	if err != nil {
+		return Appointment{}, err
+	}
+
+	query := `
 		SELECT id, slot_id, professional_id, patient_id, status, created_at, updated_at, cancelled_at
 		FROM appointments
 		WHERE id = $1
-	`, strings.TrimSpace(appointmentID)))
+	`
+	if useConsultations {
+		query = `
+			SELECT id, slot_id, professional_id, patient_id, ` + legacyAppointmentStatusSelectSQL("status") + `, created_at, updated_at, cancelled_at
+			FROM consultations
+			WHERE id = $1
+		`
+	}
+
+	appointment, err := scanAppointment(r.db.QueryRowContext(ctx, query, strings.TrimSpace(appointmentID)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Appointment{}, ErrNotFound
 	}
@@ -386,12 +692,39 @@ func (r *Repository) CancelAppointment(ctx context.Context, appointmentID string
 	}
 	defer tx.Rollback()
 
-	appointment, err := scanAppointment(tx.QueryRowContext(ctx, `
+	useConsultations, err := usesConsultationAppointmentStore(ctx, tx)
+	if err != nil {
+		return Appointment{}, err
+	}
+
+	selectQuery := `
 		SELECT id, slot_id, professional_id, patient_id, status, created_at, updated_at, cancelled_at
 		FROM appointments
 		WHERE id = $1
 		FOR UPDATE
-	`, strings.TrimSpace(appointmentID)))
+	`
+	updateQuery := `
+		UPDATE appointments
+		SET status = 'cancelled', cancelled_at = $2, updated_at = $2
+		WHERE id = $1
+		RETURNING id, slot_id, professional_id, patient_id, status, created_at, updated_at, cancelled_at
+	`
+	if useConsultations {
+		selectQuery = `
+			SELECT id, slot_id, professional_id, patient_id, ` + legacyAppointmentStatusSelectSQL("status") + `, created_at, updated_at, cancelled_at
+			FROM consultations
+			WHERE id = $1
+			FOR UPDATE
+		`
+		updateQuery = `
+			UPDATE consultations
+			SET status = 'cancelled', cancelled_at = $2, updated_at = $2
+			WHERE id = $1
+			RETURNING id, slot_id, professional_id, patient_id, ` + legacyAppointmentStatusSelectSQL("status") + `, created_at, updated_at, cancelled_at
+		`
+	}
+
+	appointment, err := scanAppointment(tx.QueryRowContext(ctx, selectQuery, strings.TrimSpace(appointmentID)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Appointment{}, ErrNotFound
 	}
@@ -403,12 +736,7 @@ func (r *Repository) CancelAppointment(ctx context.Context, appointmentID string
 	}
 
 	now := time.Now().UTC()
-	updated, err := scanAppointment(tx.QueryRowContext(ctx, `
-		UPDATE appointments
-		SET status = 'cancelled', cancelled_at = $2, updated_at = $2
-		WHERE id = $1
-		RETURNING id, slot_id, professional_id, patient_id, status, created_at, updated_at, cancelled_at
-	`, strings.TrimSpace(appointmentID), now))
+	updated, err := scanAppointment(tx.QueryRowContext(ctx, updateQuery, strings.TrimSpace(appointmentID), now))
 	if err != nil {
 		return Appointment{}, err
 	}
@@ -427,6 +755,37 @@ func (r *Repository) CancelAppointment(ctx context.Context, appointmentID string
 	}
 
 	return updated, nil
+}
+
+func usesConsultationAppointmentStore(ctx context.Context, querier appointmentRelationQuerier) (bool, error) {
+	var relation string
+	err := querier.QueryRowContext(ctx, `
+		SELECT CASE
+			WHEN to_regclass('public.consultations') IS NOT NULL THEN 'consultations'
+			WHEN to_regclass('public.appointments') IS NOT NULL THEN 'appointments'
+			ELSE ''
+		END
+	`).Scan(&relation)
+	if err != nil {
+		return false, err
+	}
+	if relation == "" {
+		return false, sql.ErrNoRows
+	}
+
+	return relation == "consultations", nil
+}
+
+func legacyAppointmentStatusSelectSQL(column string) string {
+	return fmt.Sprintf("CASE WHEN %s = 'scheduled' THEN 'booked' ELSE %s END", column, column)
+}
+
+func legacyAppointmentStatusFilter(status string, useConsultations bool) string {
+	if useConsultations && status == "booked" {
+		return "scheduled"
+	}
+
+	return status
 }
 
 func (r *Repository) CreateTemplate(ctx context.Context, params CreateTemplateParams) (ScheduleTemplate, error) {
@@ -1022,6 +1381,10 @@ type appointmentScanner interface {
 	Scan(dest ...any) error
 }
 
+type consultationScanner interface {
+	Scan(dest ...any) error
+}
+
 type templateScanner interface {
 	Scan(dest ...any) error
 }
@@ -1050,6 +1413,161 @@ func scanAppointment(scanner appointmentScanner) (Appointment, error) {
 		appointment.CancelledAt = &cancelledAt.Time
 	}
 	return appointment, nil
+}
+
+func scanConsultation(scanner consultationScanner) (Consultation, error) {
+	var (
+		consultation                  Consultation
+		slotID, notes, receptionNotes sql.NullString
+		checkInTime, cancelledAt      sql.NullTime
+	)
+
+	err := scanner.Scan(
+		&consultation.ID,
+		&slotID,
+		&consultation.ProfessionalID,
+		&consultation.PatientID,
+		&consultation.Status,
+		&consultation.Source,
+		&notes,
+		&consultation.ScheduledStart,
+		&consultation.ScheduledEnd,
+		&checkInTime,
+		&receptionNotes,
+		&consultation.CreatedAt,
+		&consultation.UpdatedAt,
+		&cancelledAt,
+	)
+	if err != nil {
+		return Consultation{}, err
+	}
+
+	if slotID.Valid {
+		consultation.SlotID = &slotID.String
+	}
+	if notes.Valid {
+		consultation.Notes = &notes.String
+	}
+	if checkInTime.Valid {
+		consultation.CheckInTime = &checkInTime.Time
+	}
+	if receptionNotes.Valid {
+		consultation.ReceptionNotes = &receptionNotes.String
+	}
+	if cancelledAt.Valid {
+		consultation.CancelledAt = &cancelledAt.Time
+	}
+
+	return consultation, nil
+}
+
+type validatedCreateConsultationParams struct {
+	slotID         *string
+	professionalID string
+	patientID      string
+	source         ConsultationSource
+	scheduledStart time.Time
+	scheduledEnd   time.Time
+	notes          *string
+}
+
+type validatedUpdateConsultationStatusParams struct {
+	status         ConsultationStatus
+	checkInTime    *time.Time
+	receptionNotes *string
+}
+
+func validateCreateConsultationParams(params CreateConsultationParams) (validatedCreateConsultationParams, error) {
+	professionalID := strings.TrimSpace(params.ProfessionalID)
+	patientID := strings.TrimSpace(params.PatientID)
+	if _, err := uuid.Parse(professionalID); err != nil {
+		return validatedCreateConsultationParams{}, ErrValidation
+	}
+	if _, err := uuid.Parse(patientID); err != nil {
+		return validatedCreateConsultationParams{}, ErrValidation
+	}
+	if !params.Source.IsValid() {
+		return validatedCreateConsultationParams{}, ErrValidation
+	}
+
+	validated := validatedCreateConsultationParams{
+		professionalID: professionalID,
+		patientID:      patientID,
+		source:         params.Source,
+	}
+
+	if params.SlotID != nil {
+		slotID := strings.TrimSpace(*params.SlotID)
+		if _, err := uuid.Parse(slotID); err != nil {
+			return validatedCreateConsultationParams{}, ErrValidation
+		}
+		if params.ScheduledStart != nil || params.ScheduledEnd != nil {
+			return validatedCreateConsultationParams{}, ErrValidation
+		}
+		validated.slotID = &slotID
+	} else {
+		if params.ScheduledStart == nil || params.ScheduledEnd == nil {
+			return validatedCreateConsultationParams{}, ErrValidation
+		}
+		scheduledStart := params.ScheduledStart.UTC()
+		scheduledEnd := params.ScheduledEnd.UTC()
+		if !scheduledStart.Before(scheduledEnd) {
+			return validatedCreateConsultationParams{}, ErrValidation
+		}
+		validated.scheduledStart = scheduledStart
+		validated.scheduledEnd = scheduledEnd
+	}
+	if params.Notes != nil {
+		notes := strings.TrimSpace(*params.Notes)
+		validated.notes = &notes
+	}
+
+	return validated, nil
+}
+
+func validateConsultationID(consultationID string) (string, error) {
+	validatedID := strings.TrimSpace(consultationID)
+	if _, err := uuid.Parse(validatedID); err != nil {
+		return "", ErrValidation
+	}
+
+	return validatedID, nil
+}
+
+func validateConsultationFilters(filters ConsultationFilters) (string, time.Time, error) {
+	professionalID := strings.TrimSpace(filters.ProfessionalID)
+	if _, err := uuid.Parse(professionalID); err != nil {
+		return "", time.Time{}, ErrValidation
+	}
+
+	weekStart, err := time.Parse("2006-01-02", strings.TrimSpace(filters.WeekStart))
+	if err != nil {
+		return "", time.Time{}, ErrValidation
+	}
+
+	return professionalID, weekStart.UTC(), nil
+}
+
+func validateUpdateConsultationStatusParams(consultationID string, params UpdateConsultationStatusParams) (string, validatedUpdateConsultationStatusParams, error) {
+	validatedID, err := validateConsultationID(consultationID)
+	if err != nil {
+		return "", validatedUpdateConsultationStatusParams{}, err
+	}
+	if !params.Status.IsValid() {
+		return "", validatedUpdateConsultationStatusParams{}, ErrValidation
+	}
+
+	validated := validatedUpdateConsultationStatusParams{status: params.Status}
+	if params.CheckInTime != nil {
+		checkInTime := params.CheckInTime.UTC()
+		validated.checkInTime = &checkInTime
+	}
+	if params.ReceptionNotes != nil {
+		receptionNotes := strings.TrimSpace(*params.ReceptionNotes)
+		validated.receptionNotes = &receptionNotes
+	}
+
+	return validatedID, validated, nil
 }
 
 func scanTemplate(scanner templateScanner) (ScheduleTemplate, error) {

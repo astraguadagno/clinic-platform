@@ -25,12 +25,14 @@ CREATE INDEX availability_slots_status_idx
 
 CREATE TABLE consultations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    slot_id UUID NOT NULL,
+    slot_id UUID,
     professional_id UUID NOT NULL,
     patient_id UUID NOT NULL,
     status TEXT NOT NULL DEFAULT 'scheduled',
     source TEXT NOT NULL DEFAULT 'secretary',
     notes TEXT,
+    check_in_time TIMESTAMPTZ,
+    reception_notes TEXT,
     scheduled_start TIMESTAMPTZ NOT NULL,
     scheduled_end TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

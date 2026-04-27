@@ -1,6 +1,6 @@
 import type { AuthUser } from '../types/auth';
 
-export type SurfaceId = 'agenda' | 'directory' | 'patients';
+export type SurfaceId = 'agenda' | 'weekly-schedule' | 'directory' | 'patients';
 
 export type AgendaMode =
   | { kind: 'doctor-own'; professionalId: string }
@@ -53,7 +53,7 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
   if (user.role === 'doctor') {
     if (!professionalId) {
       return {
-        visibleSurfaces: ['agenda', 'patients'],
+        visibleSurfaces: ['agenda', 'weekly-schedule', 'patients'],
         supportSurfaces: [],
         defaultSurface: 'agenda',
         agendaMode: { kind: 'forbidden', message: DOCTOR_ASSOCIATION_MESSAGE },
@@ -63,7 +63,7 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
     }
 
     return {
-      visibleSurfaces: ['agenda', 'patients'],
+      visibleSurfaces: ['agenda', 'weekly-schedule', 'patients'],
       supportSurfaces: [],
       defaultSurface: 'agenda',
       agendaMode: { kind: 'doctor-own', professionalId },
@@ -74,7 +74,7 @@ export function deriveActorCapabilities(user: AuthUser): ActorCapabilities {
 
   if (user.role === 'secretary') {
     return {
-      visibleSurfaces: ['agenda', 'patients'],
+      visibleSurfaces: ['agenda', 'weekly-schedule', 'patients'],
       supportSurfaces: ['directory'],
       defaultSurface: 'agenda',
       agendaMode: { kind: 'operational-shared' },
@@ -199,6 +199,54 @@ export function resolveShellSurfaceMetadata(
       intro: {
         eyebrow: 'Acceso restringido',
         title: 'Pacientes',
+        description: 'Esta superficie queda visible solo para comunicar el bloqueo actual.',
+      },
+    };
+  }
+
+  if (surfaceId === 'weekly-schedule') {
+    if (capabilities.agendaMode.kind === 'doctor-own') {
+      return {
+        navItem: {
+          id: 'weekly-schedule',
+          label: 'Agenda semanal',
+          eyebrow: 'Plantilla semanal',
+          description: 'Template, vigencia y preview futuro.',
+        },
+        intro: {
+          eyebrow: 'Plantilla semanal',
+          title: 'Agenda semanal',
+          description: 'Definí tu esquema semanal y su vigencia sin mezclarlo con la operación diaria.',
+        },
+      };
+    }
+
+    if (capabilities.agendaMode.kind === 'operational-shared') {
+      return {
+        navItem: {
+          id: 'weekly-schedule',
+          label: 'Agenda semanal',
+          eyebrow: 'Configuración visible',
+          description: 'Template, vigencia y preview futuro.',
+        },
+        intro: {
+          eyebrow: 'Configuración visible',
+          title: 'Agenda semanal',
+          description: 'Editá la plantilla semanal por profesional en una superficie dedicada y explícita.',
+        },
+      };
+    }
+
+    return {
+      navItem: {
+        id: 'weekly-schedule',
+        label: 'Agenda semanal',
+        eyebrow: 'Acceso restringido',
+        description: 'Superficie bloqueada.',
+      },
+      intro: {
+        eyebrow: 'Acceso restringido',
+        title: 'Agenda semanal',
         description: 'Esta superficie queda visible solo para comunicar el bloqueo actual.',
       },
     };
