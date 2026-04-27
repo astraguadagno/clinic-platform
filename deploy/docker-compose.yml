@@ -37,28 +37,6 @@ services:
       retries: 10
       start_period: 5s
 
-  appointments-db-migrator:
-    image: postgres:17-alpine
-    container_name: appointments-db-migrator
-    environment:
-      PGPASSWORD: appointments
-    command:
-      - sh
-      - -ec
-      - >-
-        psql -h appointments-db -p 5432 -U appointments -d appointments
-        -v ON_ERROR_STOP=1
-        -f /migrations/002_prevent_availability_slot_overlaps.sql &&
-        psql -h appointments-db -p 5432 -U appointments -d appointments
-        -v ON_ERROR_STOP=1
-        -f /migrations/003_allow_rebooking_cancelled_slots.sql
-    volumes:
-      - ../services/appointments-service/migrations/002_prevent_availability_slot_overlaps.sql:/migrations/002_prevent_availability_slot_overlaps.sql:ro
-      - ../services/appointments-service/migrations/003_allow_rebooking_cancelled_slots.sql:/migrations/003_allow_rebooking_cancelled_slots.sql:ro
-    depends_on:
-      appointments-db:
-        condition: service_healthy
-
   directory-service:
     build:
       context: ../services/directory-service
@@ -121,8 +99,8 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      appointments-db-migrator:
-        condition: service_completed_successfully
+      appointments-db:
+        condition: service_healthy
       directory-service:
         condition: service_started
 
