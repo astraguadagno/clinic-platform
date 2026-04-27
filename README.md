@@ -62,39 +62,37 @@ Qué hace este arranque:
 
 - levanta una DB PostgreSQL por servicio
 - monta `001_init.sql` en `/docker-entrypoint-initdb.d/`
-- inicializa el esquema base en el primer arranque del volumen
-- corre un migrador one-shot para `appointments-db` antes de levantar `appointments-service`
-- espera a que cada DB esté saludable y a que el migrador de appointments termine OK antes de levantar su servicio HTTP
+- inicializa el esquema actual en el primer arranque del volumen
+- espera a que cada DB esté saludable antes de levantar sus servicios HTTP
 
 > Importante: los scripts de inicialización corren solamente cuando el volumen de la base está vacío.
-> Las migraciones incrementales de `appointments-service` (`002` a `007`) también se ejecutan sobre bases existentes mediante el servicio `appointments-db-migrator`.
+> En local, `appointments-service` bootstrappea directo el schema actual desde `001_init.sql` en vez de reconstruir la historia completa de migraciones sobre volúmenes existentes.
 
-### Migraciones incrementales en appointments
+### Bootstrap local de appointments
 
-Las reglas incrementales actuales de `appointments-service` se aplican de dos formas:
+Para mantener el entorno local simple y predecible:
 
-- en bootstrap limpio, porque `001_init.sql` crea el esquema base y luego corre el migrador one-shot
-- en bases ya existentes, porque `appointments-db-migrator` ejecuta `002_prevent_availability_slot_overlaps.sql`, `003_allow_rebooking_cancelled_slots.sql`, `004_schedule_templates.sql`, `005_schedule_blocks.sql`, `006_consultation_entity.sql` y `007_consultation_schedule_range.sql` en cada arranque
+- `001_init.sql` ya representa el esquema actual de `appointments-service`
+- el compose local no intenta re-ejecutar `002` a `007` sobre volúmenes viejos
+- si querés alinear tu entorno con el estado actual del schema, lo correcto es recrear el volumen local
 
-Las migraciones `002` y `003` son idempotentes por SQL. Las `004` a `007` se ejecutan de forma condicional desde el migrador para no recrear tablas/columnas ni repetir la migración de `appointments` a `consultations`.
-
-Hoy cubren al menos:
+El bootstrap local hoy cubre directamente:
 
 - no solapamiento real de slots por profesional (`002`)
-- posibilidad de volver a reservar un slot después de cancelar un appointment, manteniendo unicidad solo para appointments `booked` (`003`)
 - templates de agenda versionados por profesional (`004`)
 - bloqueos de agenda por fecha, rango o template (`005`)
 - evolución de `appointments` a `consultations` con estados y metadatos operativos (`006`)
 - rango horario propio de `consultations` para soportar consultas con o sin slot (`007`)
 
-Limitación importante:
+Tradeoff explícito:
 
-- si la base ya tiene filas solapadas en `availability_slots`, PostgreSQL va a rechazar el `ADD CONSTRAINT`
-- en ese caso el migrador falla y `appointments-service` no arranca hasta que esos datos conflictivos se corrijan manualmente
+- esto deja el compose local mucho más limpio
+- pero asume que para adoptar el schema actual en development se puede resetear el volumen local cuando haga falta
+- no reemplaza una estrategia formal de migraciones versionadas para staging/producción
 
 ## Reset del entorno local
 
-Si necesitás recrear las bases desde cero y volver a ejecutar los SQL iniciales:
+Si necesitás recrear las bases desde cero y volver a bootstrappear el schema actual:
 
 ```bash
 docker compose -f deploy/docker-compose.yml down -v

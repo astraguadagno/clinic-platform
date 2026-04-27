@@ -37,44 +37,6 @@ services:
       retries: 10
       start_period: 5s
 
-  appointments-db-migrator:
-    image: postgres:17-alpine
-    container_name: appointments-db-migrator
-    environment:
-      PGPASSWORD: appointments
-    command:
-      - sh
-      - -ec
-      - >-
-        psql -h appointments-db -p 5432 -U appointments -d appointments
-        -v ON_ERROR_STOP=1
-        -f /migrations/002_prevent_availability_slot_overlaps.sql &&
-        if [ "$(psql -h appointments-db -p 5432 -U appointments -d appointments -tAc "SELECT to_regclass('public.appointments') IS NOT NULL")" = "t" ]; then
-          psql -h appointments-db -p 5432 -U appointments -d appointments -v ON_ERROR_STOP=1 -f /migrations/003_allow_rebooking_cancelled_slots.sql;
-        fi &&
-        if [ "$(psql -h appointments-db -p 5432 -U appointments -d appointments -tAc "SELECT to_regclass('public.schedule_templates') IS NULL")" = "t" ]; then
-          psql -h appointments-db -p 5432 -U appointments -d appointments -v ON_ERROR_STOP=1 -f /migrations/004_schedule_templates.sql;
-        fi &&
-        if [ "$(psql -h appointments-db -p 5432 -U appointments -d appointments -tAc "SELECT to_regclass('public.schedule_blocks') IS NULL")" = "t" ]; then
-          psql -h appointments-db -p 5432 -U appointments -d appointments -v ON_ERROR_STOP=1 -f /migrations/005_schedule_blocks.sql;
-        fi &&
-        if [ "$(psql -h appointments-db -p 5432 -U appointments -d appointments -tAc "SELECT to_regclass('public.consultations') IS NULL AND to_regclass('public.appointments') IS NOT NULL")" = "t" ]; then
-          psql -h appointments-db -p 5432 -U appointments -d appointments -v ON_ERROR_STOP=1 -f /migrations/006_consultation_entity.sql;
-        fi &&
-        if [ "$(psql -h appointments-db -p 5432 -U appointments -d appointments -tAc "SELECT to_regclass('public.consultations') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'consultations' AND column_name = 'scheduled_start')")" = "t" ]; then
-          psql -h appointments-db -p 5432 -U appointments -d appointments -v ON_ERROR_STOP=1 -f /migrations/007_consultation_schedule_range.sql;
-        fi
-    volumes:
-      - ../services/appointments-service/migrations/002_prevent_availability_slot_overlaps.sql:/migrations/002_prevent_availability_slot_overlaps.sql:ro
-      - ../services/appointments-service/migrations/003_allow_rebooking_cancelled_slots.sql:/migrations/003_allow_rebooking_cancelled_slots.sql:ro
-      - ../services/appointments-service/migrations/004_schedule_templates.sql:/migrations/004_schedule_templates.sql:ro
-      - ../services/appointments-service/migrations/005_schedule_blocks.sql:/migrations/005_schedule_blocks.sql:ro
-      - ../services/appointments-service/migrations/006_consultation_entity.sql:/migrations/006_consultation_entity.sql:ro
-      - ../services/appointments-service/migrations/007_consultation_schedule_range.sql:/migrations/007_consultation_schedule_range.sql:ro
-    depends_on:
-      appointments-db:
-        condition: service_healthy
-
   directory-service:
     build:
       context: ../services/directory-service
@@ -137,8 +99,8 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      appointments-db-migrator:
-        condition: service_completed_successfully
+      appointments-db:
+        condition: service_healthy
       directory-service:
         condition: service_started
 
