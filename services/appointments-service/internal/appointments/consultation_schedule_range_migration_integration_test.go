@@ -8,7 +8,7 @@ import (
 )
 
 func TestRepositoryIntegrationConsultationScheduleRangeMigrationBackfillsAndAllowsStandaloneConsultations(t *testing.T) {
-	_, db := newPostgresIntegrationRepository(t)
+	_, db := newPostgresLegacyAppointmentsIntegrationRepository(t)
 
 	ctx := context.Background()
 	professionalID := "550e8400-e29b-41d4-a716-446655440170"

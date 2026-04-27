@@ -341,8 +341,10 @@ func (r *Repository) CreateAppointment(ctx context.Context, params CreateAppoint
 	`
 	if useConsultations {
 		appointmentQuery = `
-			INSERT INTO consultations (slot_id, professional_id, patient_id, source)
-			VALUES ($1, $2, $3, 'secretary')
+			INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end)
+			SELECT $1, $2, $3, 'secretary', start_time, end_time
+			FROM availability_slots
+			WHERE id = $1 AND professional_id = $2
 			RETURNING id, slot_id, professional_id, patient_id, CASE WHEN status = 'scheduled' THEN 'booked' ELSE status END, created_at, updated_at, cancelled_at
 		`
 	}

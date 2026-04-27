@@ -11,7 +11,12 @@ ALTER TABLE consultations
 
 ALTER TABLE consultations
     ADD COLUMN source TEXT NOT NULL DEFAULT 'secretary',
-    ADD COLUMN notes TEXT;
+    ADD COLUMN notes TEXT,
+    ADD COLUMN check_in_time TIMESTAMPTZ,
+    ADD COLUMN reception_notes TEXT;
+
+ALTER TABLE consultations
+    ALTER COLUMN slot_id DROP NOT NULL;
 
 ALTER TABLE consultations
     DROP CONSTRAINT IF EXISTS appointments_status_valid,
