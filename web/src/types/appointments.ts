@@ -92,9 +92,9 @@ export type ScheduleBlock = {
 	updated_at: string;
 };
 
-export type ConsultationStatus = 'scheduled' | 'checked_in' | 'completed' | 'cancelled' | 'no_show';
+export type ConsultationStatus = 'scheduled' | 'requested' | 'checked_in' | 'completed' | 'cancelled' | 'no_show';
 
-export type ConsultationSource = 'online' | 'secretary' | 'doctor';
+export type ConsultationSource = 'online' | 'secretary' | 'doctor' | 'patient';
 
 export type Consultation = {
 	id: string;
@@ -122,6 +122,13 @@ export type WeekAgenda = {
 	slots: Slot[];
 };
 
+export type PublicAvailabilitySlot = {
+	id?: string;
+	professional_id: string;
+	start_time: string;
+	end_time: string;
+};
+
 export type CreateAppointmentPayload = {
   slot_id: string;
   patient_id: string;
@@ -136,6 +143,15 @@ export type CreateConsultationPayload = {
 	scheduled_start?: string;
 	scheduled_end?: string;
 	notes?: string;
+};
+
+export type CreatePatientRequestPayload = {
+  document: string;
+  professional_id: string;
+  notes?: string;
+  contact?: string;
+  scheduled_start?: string;
+  scheduled_end?: string;
 };
 
 export type UpdateConsultationStatusPayload = {

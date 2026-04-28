@@ -6,6 +6,7 @@ type ConsultationStatus string
 
 const (
 	ConsultationStatusScheduled ConsultationStatus = "scheduled"
+	ConsultationStatusRequested ConsultationStatus = "requested"
 	ConsultationStatusCheckedIn ConsultationStatus = "checked_in"
 	ConsultationStatusCompleted ConsultationStatus = "completed"
 	ConsultationStatusCancelled ConsultationStatus = "cancelled"
@@ -15,6 +16,7 @@ const (
 func (status ConsultationStatus) IsValid() bool {
 	switch status {
 	case ConsultationStatusScheduled,
+		ConsultationStatusRequested,
 		ConsultationStatusCheckedIn,
 		ConsultationStatusCompleted,
 		ConsultationStatusCancelled,
@@ -48,13 +50,15 @@ const (
 	ConsultationSourceOnline    ConsultationSource = "online"
 	ConsultationSourceSecretary ConsultationSource = "secretary"
 	ConsultationSourceDoctor    ConsultationSource = "doctor"
+	ConsultationSourcePatient   ConsultationSource = "patient"
 )
 
 func (source ConsultationSource) IsValid() bool {
 	switch source {
 	case ConsultationSourceOnline,
 		ConsultationSourceSecretary,
-		ConsultationSourceDoctor:
+		ConsultationSourceDoctor,
+		ConsultationSourcePatient:
 		return true
 	default:
 		return false

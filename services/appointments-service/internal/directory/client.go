@@ -15,6 +15,7 @@ import (
 var (
 	ErrUnavailable  = errors.New("directory service unavailable")
 	ErrUnauthorized = errors.New("directory unauthorized")
+	ErrNotFound     = errors.New("directory resource not found")
 )
 
 type User struct {
@@ -25,6 +26,12 @@ type User struct {
 	Active         bool       `json:"active"`
 	CreatedAt      *time.Time `json:"created_at,omitempty"`
 	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+}
+
+type Patient struct {
+	ID       string `json:"id"`
+	Document string `json:"document"`
+	Active   bool   `json:"active"`
 }
 
 type Client struct {
@@ -57,6 +64,38 @@ func (c *Client) ProfessionalExists(ctx context.Context, professionalID string) 
 
 func (c *Client) PatientExists(ctx context.Context, patientID string) (bool, error) {
 	return c.lookup(ctx, path.Join("patients", patientID))
+}
+
+func (c *Client) PatientByDocument(ctx context.Context, document string) (Patient, error) {
+	endpoint := *c.baseURL
+	endpoint.Path = path.Join(c.baseURL.Path, "internal", "patients", "by-document")
+	query := endpoint.Query()
+	query.Set("document", strings.TrimSpace(document))
+	endpoint.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return Patient{}, fmt.Errorf("create directory request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return Patient{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var patient Patient
+		if err := json.NewDecoder(resp.Body).Decode(&patient); err != nil {
+			return Patient{}, fmt.Errorf("decode patient: %w", err)
+		}
+		return patient, nil
+	case http.StatusNotFound:
+		return Patient{}, ErrNotFound
+	default:
+		return Patient{}, fmt.Errorf("%w: status %d", ErrUnavailable, resp.StatusCode)
+	}
 }
 
 func (c *Client) CurrentUser(ctx context.Context, bearer string) (User, error) {

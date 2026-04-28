@@ -1402,6 +1402,138 @@ func TestCreateConsultationPostScenarios(t *testing.T) {
 	}
 }
 
+func TestPatientRequestPostScenarios(t *testing.T) {
+	const (
+		validPatientID      = "550e8400-e29b-41d4-a716-446655440503"
+		validProfessionalID = "550e8400-e29b-41d4-a716-446655440504"
+	)
+
+	createdAt := time.Date(2026, time.April, 16, 9, 0, 0, 0, time.UTC)
+	requestedStart := createdAt
+	requestedEnd := createdAt.Add(time.Minute)
+	notes := "Prefiero turno por la tarde. Contacto: 11-5555"
+	createdRequest := appointments.Consultation{
+		ID:             "550e8400-e29b-41d4-a716-446655440501",
+		ProfessionalID: validProfessionalID,
+		PatientID:      validPatientID,
+		Status:         appointments.ConsultationStatusRequested,
+		Source:         appointments.ConsultationSourcePatient,
+		ScheduledStart: requestedStart,
+		ScheduledEnd:   requestedEnd,
+		Notes:          &notes,
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
+	}
+
+	tests := []struct {
+		name                 string
+		body                 string
+		directory            stubDirectoryLookup
+		repoErr              error
+		wantStatus           int
+		wantError            string
+		wantDocumentLookups  int
+		wantProfessionalHits int
+		wantRepoCalls        int
+	}{
+		{
+			name:                 "invalid document returns bad request",
+			body:                 `{"document":" ","professional_id":"` + validProfessionalID + `"}`,
+			wantStatus:           http.StatusBadRequest,
+			wantError:            "invalid patient request",
+			wantDocumentLookups:  0,
+			wantProfessionalHits: 0,
+			wantRepoCalls:        0,
+		},
+		{
+			name: "patient document not found returns not found without leaking profile data",
+			body: `{"document":"12345678","professional_id":"` + validProfessionalID + `"}`,
+			directory: stubDirectoryLookup{
+				patientDocumentErr: directory.ErrNotFound,
+			},
+			wantStatus:           http.StatusNotFound,
+			wantError:            "patient not found",
+			wantDocumentLookups:  1,
+			wantProfessionalHits: 0,
+			wantRepoCalls:        0,
+		},
+		{
+			name: "success creates public requested patient consultation",
+			body: `{"document":" 12345678 ","professional_id":"` + validProfessionalID + `","notes":"Prefiero turno por la tarde","contact":"11-5555"}`,
+			directory: stubDirectoryLookup{
+				professionalExists: true,
+				patientByDocument:  directory.Patient{ID: validPatientID, Document: "12345678", Active: true},
+			},
+			wantStatus:           http.StatusCreated,
+			wantDocumentLookups:  1,
+			wantProfessionalHits: 1,
+			wantRepoCalls:        1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := tt.directory
+			repo := &stubAppointmentsRepository{
+				createConsultationFn: func(_ context.Context, params appointments.CreateConsultationParams) (appointments.Consultation, error) {
+					if params.PatientID != validPatientID {
+						t.Fatalf("patient_id = %q, want %q", params.PatientID, validPatientID)
+					}
+					if params.ProfessionalID != validProfessionalID {
+						t.Fatalf("professional_id = %q, want %q", params.ProfessionalID, validProfessionalID)
+					}
+					if params.Source != appointments.ConsultationSourcePatient {
+						t.Fatalf("source = %q, want %q", params.Source, appointments.ConsultationSourcePatient)
+					}
+					if params.Status != appointments.ConsultationStatusRequested {
+						t.Fatalf("status = %q, want %q", params.Status, appointments.ConsultationStatusRequested)
+					}
+					if params.SlotID != nil {
+						t.Fatalf("slot_id = %v, want nil", params.SlotID)
+					}
+					if params.Notes == nil || *params.Notes != notes {
+						t.Fatalf("notes = %v, want %q", params.Notes, notes)
+					}
+					return createdRequest, tt.repoErr
+				},
+			}
+			server := NewServer(testAppointmentsConfig(), repo, &dir)
+			recorder := httptest.NewRecorder()
+
+			server.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/patient-requests", bytes.NewBufferString(tt.body)))
+
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
+			}
+			if dir.patientDocumentCalls != tt.wantDocumentLookups {
+				t.Fatalf("PatientByDocument calls = %d, want %d", dir.patientDocumentCalls, tt.wantDocumentLookups)
+			}
+			if dir.professionalCalls != tt.wantProfessionalHits {
+				t.Fatalf("ProfessionalExists calls = %d, want %d", dir.professionalCalls, tt.wantProfessionalHits)
+			}
+			if repo.createConsultationCalls != tt.wantRepoCalls {
+				t.Fatalf("CreateConsultation calls = %d, want %d", repo.createConsultationCalls, tt.wantRepoCalls)
+			}
+
+			if tt.wantError != "" {
+				assertErrorResponse(t, recorder.Body, tt.wantError)
+				return
+			}
+
+			var response appointments.Consultation
+			if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if response.PatientID != validPatientID || response.Status != appointments.ConsultationStatusRequested || response.Source != appointments.ConsultationSourcePatient {
+				t.Fatalf("response = %+v, want requested patient consultation", response)
+			}
+			if strings.Contains(recorder.Body.String(), "12345678") {
+				t.Fatalf("response leaked patient document: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestGetConsultationScenarios(t *testing.T) {
 	const (
 		validConsultationID = "550e8400-e29b-41d4-a716-446655440411"
@@ -1852,6 +1984,190 @@ func TestGetAgendaWeekReturnsEmptyScheduleWhenNoTemplateExists(t *testing.T) {
 	}
 }
 
+func TestGetPublicAvailabilityReturnsOnlySafeAvailableSlots(t *testing.T) {
+	t.Parallel()
+
+	const professionalID = "550e8400-e29b-41d4-a716-446655440030"
+	templateID := "550e8400-e29b-41d4-a716-446655440031"
+	weekStart := time.Date(2026, time.April, 6, 0, 0, 0, 0, time.UTC)
+	version := appointments.ScheduleTemplateVersion{
+		ID:            "550e8400-e29b-41d4-a716-446655440032",
+		TemplateID:    templateID,
+		VersionNumber: 1,
+		EffectiveFrom: weekStart,
+		Recurrence:    json.RawMessage(`{"monday":{"start_time":"09:00","end_time":"10:00","slot_duration_minutes":30}}`),
+		CreatedAt:     weekStart.Add(-24 * time.Hour),
+	}
+	occupiedStart := weekStart.Add(9 * time.Hour)
+	occupiedEnd := occupiedStart.Add(30 * time.Minute)
+	privateNote := "private note"
+
+	repo := &stubAppointmentsRepository{
+		getActiveTemplateFn: func(_ context.Context, gotProfessionalID, effectiveDate string) (appointments.ScheduleTemplateVersion, error) {
+			if gotProfessionalID != professionalID {
+				t.Fatalf("professionalID = %q, want %q", gotProfessionalID, professionalID)
+			}
+			if effectiveDate != "2026-04-12" {
+				t.Fatalf("effectiveDate = %q, want %q", effectiveDate, "2026-04-12")
+			}
+			return version, nil
+		},
+		getTemplateFn: func(_ context.Context, gotTemplateID string) (appointments.ScheduleTemplate, error) {
+			if gotTemplateID != templateID {
+				t.Fatalf("templateID = %q, want %q", gotTemplateID, templateID)
+			}
+			return appointments.ScheduleTemplate{ID: templateID, ProfessionalID: professionalID, CreatedAt: weekStart.Add(-48 * time.Hour), UpdatedAt: weekStart.Add(-24 * time.Hour)}, nil
+		},
+		listTemplateVersionsFn: func(_ context.Context, gotTemplateID string) ([]appointments.ScheduleTemplateVersion, error) {
+			if gotTemplateID != templateID {
+				t.Fatalf("templateID = %q, want %q", gotTemplateID, templateID)
+			}
+			return []appointments.ScheduleTemplateVersion{version}, nil
+		},
+		listScheduleBlocksFn: func(_ context.Context, filters appointments.ScheduleBlockFilters) ([]appointments.ScheduleBlock, error) {
+			if filters.ProfessionalID != professionalID {
+				t.Fatalf("filters.ProfessionalID = %q, want %q", filters.ProfessionalID, professionalID)
+			}
+			return nil, nil
+		},
+		listConsultationsFn: func(_ context.Context, filters appointments.ConsultationFilters) ([]appointments.Consultation, error) {
+			if filters.ProfessionalID != professionalID || filters.WeekStart != "2026-04-06" {
+				t.Fatalf("filters = %+v, want professional %q week 2026-04-06", filters, professionalID)
+			}
+			return []appointments.Consultation{
+				{
+					ID:             "550e8400-e29b-41d4-a716-446655440033",
+					ProfessionalID: professionalID,
+					PatientID:      "550e8400-e29b-41d4-a716-446655440034",
+					Status:         appointments.ConsultationStatusScheduled,
+					Source:         appointments.ConsultationSourceSecretary,
+					ScheduledStart: occupiedStart,
+					ScheduledEnd:   occupiedEnd,
+					Notes:          &privateNote,
+				},
+				{
+					ID:             "550e8400-e29b-41d4-a716-446655440036",
+					ProfessionalID: professionalID,
+					PatientID:      "550e8400-e29b-41d4-a716-446655440037",
+					Status:         appointments.ConsultationStatusRequested,
+					Source:         appointments.ConsultationSourcePatient,
+					ScheduledStart: weekStart.Add(9*time.Hour + 30*time.Minute),
+					ScheduledEnd:   weekStart.Add(9*time.Hour + 31*time.Minute),
+				},
+			}, nil
+		},
+		listSlotsFn: func(_ context.Context, filters appointments.SlotFilters) ([]appointments.AvailabilitySlot, error) {
+			if filters.ProfessionalID != professionalID || filters.Status != "available" {
+				t.Fatalf("slot filters = %+v, want professional %q available", filters, professionalID)
+			}
+			if filters.Date == "2026-04-06" {
+				return []appointments.AvailabilitySlot{{
+					ID:             "550e8400-e29b-41d4-a716-446655440035",
+					ProfessionalID: professionalID,
+					StartTime:      weekStart.Add(9*time.Hour + 30*time.Minute),
+					EndTime:        weekStart.Add(10 * time.Hour),
+					Status:         "available",
+				}}, nil
+			}
+			return nil, nil
+		},
+	}
+
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{})
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/public/availability?professional_id="+professionalID+"&week_start=2026-04-06", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	var response struct {
+		Items []struct {
+			ID             string `json:"id,omitempty"`
+			ProfessionalID string `json:"professional_id"`
+			StartTime      string `json:"start_time"`
+			EndTime        string `json:"end_time"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Items) != 1 {
+		t.Fatalf("items len = %d, want 1: %+v", len(response.Items), response.Items)
+	}
+	if response.Items[0].ID != "550e8400-e29b-41d4-a716-446655440035" || response.Items[0].ProfessionalID != professionalID || response.Items[0].StartTime != "2026-04-06T09:30:00Z" || response.Items[0].EndTime != "2026-04-06T10:00:00Z" {
+		t.Fatalf("item = %+v, want only the free 09:30 slot", response.Items[0])
+	}
+	body := recorder.Body.String()
+	for _, forbidden := range []string{"consultations", "patient_id", "notes", "private note", "blocks", "templates", "status"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("public availability leaked %q in body: %s", forbidden, body)
+		}
+	}
+}
+
+func TestPatientRequestDirectBookingCreatesScheduledConsultation(t *testing.T) {
+	const (
+		validPatientID      = "550e8400-e29b-41d4-a716-446655440513"
+		validProfessionalID = "550e8400-e29b-41d4-a716-446655440514"
+	)
+	scheduledStart := time.Date(2026, time.April, 20, 14, 0, 0, 0, time.UTC)
+	scheduledEnd := scheduledStart.Add(30 * time.Minute)
+	created := appointments.Consultation{
+		ID:             "550e8400-e29b-41d4-a716-446655440515",
+		ProfessionalID: validProfessionalID,
+		PatientID:      validPatientID,
+		Status:         appointments.ConsultationStatusScheduled,
+		Source:         appointments.ConsultationSourcePatient,
+		ScheduledStart: scheduledStart,
+		ScheduledEnd:   scheduledEnd,
+	}
+	dir := stubDirectoryLookup{
+		professionalExists: true,
+		patientByDocument:  directory.Patient{ID: validPatientID, Document: "12345678", Active: true},
+	}
+	repo := &stubAppointmentsRepository{
+		createConsultationFn: func(_ context.Context, params appointments.CreateConsultationParams) (appointments.Consultation, error) {
+			if params.PatientID != validPatientID || params.ProfessionalID != validProfessionalID {
+				t.Fatalf("params patient/professional = %q/%q", params.PatientID, params.ProfessionalID)
+			}
+			if params.Status != appointments.ConsultationStatusScheduled {
+				t.Fatalf("status = %q, want %q", params.Status, appointments.ConsultationStatusScheduled)
+			}
+			if params.Source != appointments.ConsultationSourcePatient {
+				t.Fatalf("source = %q, want %q", params.Source, appointments.ConsultationSourcePatient)
+			}
+			if params.ScheduledStart == nil || !params.ScheduledStart.Equal(scheduledStart) {
+				t.Fatalf("scheduled_start = %v, want %v", params.ScheduledStart, scheduledStart)
+			}
+			if params.ScheduledEnd == nil || !params.ScheduledEnd.Equal(scheduledEnd) {
+				t.Fatalf("scheduled_end = %v, want %v", params.ScheduledEnd, scheduledEnd)
+			}
+			return created, nil
+		},
+	}
+
+	server := NewServer(testAppointmentsConfig(), repo, &dir)
+	recorder := httptest.NewRecorder()
+	body := `{"document":"12345678","professional_id":"` + validProfessionalID + `","scheduled_start":"2026-04-20T14:00:00Z","scheduled_end":"2026-04-20T14:30:00Z"}`
+
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/patient-requests", bytes.NewBufferString(body)))
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+	if repo.createConsultationCalls != 1 {
+		t.Fatalf("CreateConsultation calls = %d, want 1", repo.createConsultationCalls)
+	}
+	var response appointments.Consultation
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Status != appointments.ConsultationStatusScheduled || response.Source != appointments.ConsultationSourcePatient {
+		t.Fatalf("response = %+v, want scheduled patient consultation", response)
+	}
+}
+
 func TestListSlotsReturnsBadRequestOnInvalidFilters(t *testing.T) {
 	repo := &stubAppointmentsRepository{
 		listSlotsFn: func(context.Context, appointments.SlotFilters) ([]appointments.AvailabilitySlot, error) {
@@ -2169,15 +2485,18 @@ type stubAppointmentsRepository struct {
 }
 
 type stubDirectoryLookup struct {
-	currentUser        directory.User
-	currentUserErr     error
-	professionalExists bool
-	professionalErr    error
-	patientExists      bool
-	patientErr         error
-	currentUserCalls   int
-	professionalCalls  int
-	patientCalls       int
+	currentUser          directory.User
+	currentUserErr       error
+	professionalExists   bool
+	professionalErr      error
+	patientExists        bool
+	patientErr           error
+	patientByDocument    directory.Patient
+	patientDocumentErr   error
+	currentUserCalls     int
+	professionalCalls    int
+	patientCalls         int
+	patientDocumentCalls int
 }
 
 func (s *stubDirectoryLookup) CurrentUser(context.Context, string) (directory.User, error) {
@@ -2205,6 +2524,14 @@ func (s *stubDirectoryLookup) PatientExists(context.Context, string) (bool, erro
 		return false, s.patientErr
 	}
 	return s.patientExists, nil
+}
+
+func (s *stubDirectoryLookup) PatientByDocument(context.Context, string) (directory.Patient, error) {
+	s.patientDocumentCalls++
+	if s.patientDocumentErr != nil {
+		return directory.Patient{}, s.patientDocumentErr
+	}
+	return s.patientByDocument, nil
 }
 
 func (s *stubAppointmentsRepository) CreateSlotsBulk(ctx context.Context, params appointments.BulkCreateSlotsParams) ([]appointments.AvailabilitySlot, error) {

@@ -67,6 +67,22 @@ type createConsultationRequest struct {
 	Notes          *string                         `json:"notes,omitempty"`
 }
 
+type createPatientRequestRequest struct {
+	Document       string     `json:"document"`
+	ProfessionalID string     `json:"professional_id"`
+	Notes          *string    `json:"notes,omitempty"`
+	Contact        *string    `json:"contact,omitempty"`
+	ScheduledStart *time.Time `json:"scheduled_start,omitempty"`
+	ScheduledEnd   *time.Time `json:"scheduled_end,omitempty"`
+}
+
+type publicAvailabilitySlot struct {
+	ID             string    `json:"id,omitempty"`
+	ProfessionalID string    `json:"professional_id"`
+	StartTime      time.Time `json:"start_time"`
+	EndTime        time.Time `json:"end_time"`
+}
+
 type createBlockRequest struct {
 	ProfessionalID string  `json:"professional_id"`
 	Scope          string  `json:"scope"`
@@ -103,6 +119,7 @@ type directoryLookup interface {
 	CurrentUser(ctx context.Context, bearer string) (directory.User, error)
 	ProfessionalExists(ctx context.Context, professionalID string) (bool, error)
 	PatientExists(ctx context.Context, patientID string) (bool, error)
+	PatientByDocument(ctx context.Context, document string) (directory.Patient, error)
 }
 
 type ActorContext struct {
@@ -138,9 +155,29 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/blocks", s.blocks)
 	s.mux.HandleFunc("/blocks/", s.blockByID)
 	s.mux.HandleFunc("/consultations", s.consultations)
+	s.mux.HandleFunc("/patient-requests", s.patientRequests)
+	s.mux.HandleFunc("/public/availability", s.publicAvailability)
 	s.mux.HandleFunc("/agenda/week", s.agendaWeek)
 	s.mux.HandleFunc("/appointments", s.appointments)
 	s.mux.HandleFunc("/appointments/", s.appointmentByIDAction)
+}
+
+func (s *Server) publicAvailability(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	s.getPublicAvailability(w, r)
+}
+
+func (s *Server) patientRequests(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	s.createPatientRequest(w, r)
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -825,6 +862,201 @@ func (s *Server) createConsultation(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, consultation)
 }
 
+func (s *Server) createPatientRequest(w http.ResponseWriter, r *http.Request) {
+	var request createPatientRequestRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	params, err := validateCreatePatientRequest(request)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid patient request")
+		return
+	}
+
+	patient, err := s.dir.PatientByDocument(r.Context(), params.Document)
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return
+	}
+
+	professionalExists, err := s.dir.ProfessionalExists(r.Context(), params.ProfessionalID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "directory service unavailable")
+		return
+	}
+	if !professionalExists {
+		writeError(w, http.StatusBadRequest, "professional not found")
+		return
+	}
+
+	status := appointments.ConsultationStatusRequested
+	scheduledStart := params.ScheduledStart
+	scheduledEnd := params.ScheduledEnd
+	if scheduledStart != nil && scheduledEnd != nil {
+		status = appointments.ConsultationStatusScheduled
+	} else {
+		now := time.Now().UTC()
+		requestEnd := now.Add(time.Minute)
+		scheduledStart = &now
+		scheduledEnd = &requestEnd
+	}
+	consultation, err := s.repo.CreateConsultation(r.Context(), appointments.CreateConsultationParams{
+		ProfessionalID: params.ProfessionalID,
+		PatientID:      patient.ID,
+		Status:         status,
+		Source:         appointments.ConsultationSourcePatient,
+		ScheduledStart: scheduledStart,
+		ScheduledEnd:   scheduledEnd,
+		Notes:          params.Notes,
+	})
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid patient request")
+		return
+	}
+	if errors.Is(err, appointments.ErrConflict) {
+		writeError(w, http.StatusConflict, "patient request conflicts with existing schedule")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create patient request")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, consultation)
+}
+
+func (s *Server) getPublicAvailability(w http.ResponseWriter, r *http.Request) {
+	professionalID := strings.TrimSpace(r.URL.Query().Get("professional_id"))
+	weekStart, err := validateAgendaWeekFilters(professionalID, r.URL.Query().Get("week_start"))
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid availability filters")
+		return
+	}
+
+	blocks, err := s.repo.ListScheduleBlocks(r.Context(), appointments.ScheduleBlockFilters{ProfessionalID: professionalID})
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid availability filters")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load availability")
+		return
+	}
+
+	consultations, err := s.repo.ListConsultations(r.Context(), appointments.ConsultationFilters{
+		ProfessionalID: professionalID,
+		WeekStart:      weekStart.Format("2006-01-02"),
+	})
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid availability filters")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load availability")
+		return
+	}
+
+	templates, err := s.loadWeekAgendaTemplates(r.Context(), professionalID, weekStart)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid availability filters")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load availability")
+		return
+	}
+
+	agenda, err := appointments.ComposeWeekAgenda(professionalID, weekStart, templates, blocks, consultations)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid availability filters")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load availability")
+		return
+	}
+
+	persistedSlots, err := s.loadPublicAvailabilityPersistedSlots(r.Context(), professionalID, weekStart)
+	if errors.Is(err, appointments.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "invalid availability filters")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load availability")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": filterPublicAvailability(mergePersistedPublicSlotIDs(agenda.Slots, persistedSlots), agenda.Consultations)})
+}
+
+func (s *Server) loadPublicAvailabilityPersistedSlots(ctx context.Context, professionalID string, weekStart time.Time) ([]appointments.AvailabilitySlot, error) {
+	slots := make([]appointments.AvailabilitySlot, 0)
+	for dayOffset := 0; dayOffset < 7; dayOffset++ {
+		date := weekStart.AddDate(0, 0, dayOffset).Format("2006-01-02")
+		items, err := s.repo.ListSlots(ctx, appointments.SlotFilters{ProfessionalID: professionalID, Status: "available", Date: date})
+		if err != nil {
+			return nil, err
+		}
+		slots = append(slots, items...)
+	}
+	return slots, nil
+}
+
+func mergePersistedPublicSlotIDs(generated []appointments.AvailabilitySlot, persisted []appointments.AvailabilitySlot) []appointments.AvailabilitySlot {
+	idsByRange := make(map[string]string, len(persisted))
+	for _, slot := range persisted {
+		idsByRange[slotRangeKey(slot)] = slot.ID
+	}
+
+	merged := make([]appointments.AvailabilitySlot, 0, len(generated))
+	for _, slot := range generated {
+		if id := idsByRange[slotRangeKey(slot)]; id != "" {
+			slot.ID = id
+		}
+		merged = append(merged, slot)
+	}
+	return merged
+}
+
+func slotRangeKey(slot appointments.AvailabilitySlot) string {
+	return slot.ProfessionalID + "|" + slot.StartTime.UTC().Format(time.RFC3339Nano) + "|" + slot.EndTime.UTC().Format(time.RFC3339Nano)
+}
+
+func filterPublicAvailability(slots []appointments.AvailabilitySlot, consultations []appointments.Consultation) []publicAvailabilitySlot {
+	items := make([]publicAvailabilitySlot, 0, len(slots))
+	for _, slot := range slots {
+		if publicSlotOverlapsConsultation(slot, consultations) {
+			continue
+		}
+		items = append(items, publicAvailabilitySlot{
+			ID:             slot.ID,
+			ProfessionalID: slot.ProfessionalID,
+			StartTime:      slot.StartTime,
+			EndTime:        slot.EndTime,
+		})
+	}
+
+	return items
+}
+
+func publicSlotOverlapsConsultation(slot appointments.AvailabilitySlot, consultations []appointments.Consultation) bool {
+	for _, consultation := range consultations {
+		if consultation.Status != appointments.ConsultationStatusScheduled && consultation.Status != appointments.ConsultationStatusCheckedIn {
+			continue
+		}
+		if slot.StartTime.Before(consultation.ScheduledEnd) && consultation.ScheduledStart.Before(slot.EndTime) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) getConsultation(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.requireAgendaActor(w, r)
 	if !ok {
@@ -1165,6 +1397,53 @@ func validateCreateConsultationRequest(params appointments.CreateConsultationPar
 	}
 
 	return params, nil
+}
+
+func validateCreatePatientRequest(request createPatientRequestRequest) (createPatientRequestRequest, error) {
+	document := strings.TrimSpace(request.Document)
+	professionalID := strings.TrimSpace(request.ProfessionalID)
+	if document == "" {
+		return createPatientRequestRequest{}, appointments.ErrValidation
+	}
+	if _, err := uuid.Parse(professionalID); err != nil {
+		return createPatientRequestRequest{}, appointments.ErrValidation
+	}
+
+	var notes *string
+	if request.Notes != nil || request.Contact != nil {
+		parts := make([]string, 0, 2)
+		if request.Notes != nil {
+			if value := strings.TrimSpace(*request.Notes); value != "" {
+				parts = append(parts, value)
+			}
+		}
+		if request.Contact != nil {
+			if value := strings.TrimSpace(*request.Contact); value != "" {
+				parts = append(parts, "Contacto: "+value)
+			}
+		}
+		if len(parts) > 0 {
+			joined := strings.Join(parts, ". ")
+			notes = &joined
+		}
+	}
+
+	if (request.ScheduledStart == nil) != (request.ScheduledEnd == nil) {
+		return createPatientRequestRequest{}, appointments.ErrValidation
+	}
+	var scheduledStart *time.Time
+	var scheduledEnd *time.Time
+	if request.ScheduledStart != nil && request.ScheduledEnd != nil {
+		start := request.ScheduledStart.UTC()
+		end := request.ScheduledEnd.UTC()
+		if !start.Before(end) {
+			return createPatientRequestRequest{}, appointments.ErrValidation
+		}
+		scheduledStart = &start
+		scheduledEnd = &end
+	}
+
+	return createPatientRequestRequest{Document: document, ProfessionalID: professionalID, Notes: notes, ScheduledStart: scheduledStart, ScheduledEnd: scheduledEnd}, nil
 }
 
 func validateCreateBlockRequest(params appointments.CreateScheduleBlockParams) error {

@@ -221,4 +221,54 @@ describe('appointments API auth transport', () => {
 			appointments.fetchWeekAgenda({ professional_id: 'professional-1', week_start: '2026-04-06' }),
 		).rejects.toThrow('agenda unavailable');
 	});
+
+	it('creates patient requests without authenticated transport', async () => {
+		requestMock.mockResolvedValue({ id: 'request-1', status: 'requested', source: 'patient' });
+		const appointments = await import('./appointments');
+
+		await appointments.createPatientRequest({
+			document: '12345678',
+			professional_id: 'professional-1',
+			notes: 'Prefiero tarde',
+			contact: '11-5555',
+		});
+
+		expect(requestMock).toHaveBeenCalledWith('/appointments-api', '/patient-requests', {
+			method: 'POST',
+			body: {
+				document: '12345678',
+				professional_id: 'professional-1',
+				notes: 'Prefiero tarde',
+				contact: '11-5555',
+			},
+		});
+	});
+
+	it('loads public availability without authenticated transport', async () => {
+		requestMock.mockResolvedValue({
+			items: [
+				{
+					professional_id: 'professional-1',
+					start_time: '2026-04-20T14:00:00Z',
+					end_time: '2026-04-20T14:30:00Z',
+				},
+			],
+		});
+		const appointments = await import('./appointments');
+
+		await expect(
+			appointments.listPublicAvailability({ professional_id: 'professional-1', week_start: '2026-04-20' }),
+		).resolves.toEqual({
+			items: [
+				{
+					professional_id: 'professional-1',
+					start_time: '2026-04-20T14:00:00Z',
+					end_time: '2026-04-20T14:30:00Z',
+				},
+			],
+		});
+		expect(requestMock).toHaveBeenCalledWith('/appointments-api', '/public/availability', {
+			query: { professional_id: 'professional-1', week_start: '2026-04-20' },
+		});
+	});
 });

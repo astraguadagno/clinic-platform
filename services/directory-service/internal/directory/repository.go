@@ -146,6 +146,35 @@ func (r *Repository) GetPatientByID(ctx context.Context, id string) (Patient, er
 	return patient, err
 }
 
+func (r *Repository) GetPatientByDocument(ctx context.Context, document string) (Patient, error) {
+	validatedDocument, err := validatePatientDocumentLookup(document)
+	if err != nil {
+		return Patient{}, err
+	}
+
+	query := `
+		SELECT id, first_name, last_name, document, birth_date, phone, email, active, created_at, updated_at
+		FROM patients
+		WHERE document = $1
+	`
+
+	patient, err := scanPatient(r.db.QueryRowContext(ctx, query, validatedDocument))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Patient{}, ErrNotFound
+	}
+
+	return patient, err
+}
+
+func validatePatientDocumentLookup(document string) (string, error) {
+	validatedDocument := strings.TrimSpace(document)
+	if validatedDocument == "" {
+		return "", ErrValidation
+	}
+
+	return validatedDocument, nil
+}
+
 func (r *Repository) CreateProfessional(ctx context.Context, params CreateProfessionalParams) (Professional, error) {
 	normalized, err := validateCreateProfessionalParams(params)
 	if err != nil {

@@ -92,6 +92,7 @@ func TestConsultationStatusIsValid(t *testing.T) {
 		want   bool
 	}{
 		{name: "scheduled is valid", status: ConsultationStatusScheduled, want: true},
+		{name: "requested is valid", status: ConsultationStatusRequested, want: true},
 		{name: "checked_in is valid", status: ConsultationStatusCheckedIn, want: true},
 		{name: "completed is valid", status: ConsultationStatusCompleted, want: true},
 		{name: "cancelled is valid", status: ConsultationStatusCancelled, want: true},
@@ -122,7 +123,7 @@ func TestConsultationSourceIsValid(t *testing.T) {
 		{name: "online is valid", source: ConsultationSourceOnline, want: true},
 		{name: "secretary is valid", source: ConsultationSourceSecretary, want: true},
 		{name: "doctor is valid", source: ConsultationSourceDoctor, want: true},
-		{name: "patient is invalid", source: ConsultationSource("patient"), want: false},
+		{name: "patient is valid", source: ConsultationSourcePatient, want: true},
 		{name: "empty is invalid", source: ConsultationSource(""), want: false},
 	}
 

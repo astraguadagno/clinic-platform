@@ -169,3 +169,31 @@ func TestValidateCreateProfessionalParams(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePatientDocumentLookup(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		want     string
+		wantErr  error
+	}{
+		{name: "trims document", document: "  12345678  ", want: "12345678"},
+		{name: "rejects blank document", document: "   ", wantErr: ErrValidation},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validatePatientDocumentLookup(tt.document)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			if got != tt.want {
+				t.Fatalf("document = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -4,11 +4,13 @@ import { deriveActorCapabilities, resolveShellSurfaceMetadata, type SurfaceId } 
 import { useAuthSession } from './auth/useAuthSession';
 import { LoginScreen } from './features/auth/LoginScreen';
 import { DirectoryDemo } from './features/directory/DirectoryDemo';
+import { PatientRequestSurface } from './features/patient-request/PatientRequestSurface';
 import { PatientsWorkspace } from './features/patients/PatientsWorkspace';
 import { ScheduleDemo } from './features/schedule/ScheduleDemo';
 import { WeeklyScheduleWorkspace } from './features/schedule/WeeklyScheduleWorkspace';
 
 export default function App() {
+  const isPatientRequestRoute = typeof window !== 'undefined' && window.location.hash === '#patient-request';
   const auth = useAuthSession();
   const capabilities = useMemo(
     () => (auth.user ? deriveActorCapabilities(auth.user) : null),
@@ -45,6 +47,10 @@ export default function App() {
   const activeSurfaceDefinition = normalizedActiveSurface && capabilities
     ? { id: normalizedActiveSurface, ...resolveShellSurfaceMetadata(normalizedActiveSurface, capabilities) }
     : visibleSurfaces[0];
+
+  if (isPatientRequestRoute) {
+    return <PatientRequestSurface />;
+  }
 
   if (auth.status === 'loading') {
     return (
