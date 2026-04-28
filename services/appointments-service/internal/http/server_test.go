@@ -416,14 +416,14 @@ func TestCreateSchedulePostScenarios(t *testing.T) {
 			wantCreateRepoCalls:   1,
 		},
 		{
-			name: "repo conflict returns conflict",
+			name: "repo conflict is treated as unexpected create failure",
 			body: validBody,
 			directory: stubDirectoryLookup{
 				professionalExists: true,
 			},
 			repoErr:               appointments.ErrConflict,
-			wantStatus:            http.StatusConflict,
-			wantError:             "schedule version already exists for effective date",
+			wantStatus:            http.StatusInternalServerError,
+			wantError:             "failed to create schedule",
 			wantProfessionalCalls: 1,
 			wantCreateRepoCalls:   1,
 		},
@@ -494,6 +494,86 @@ func TestCreateSchedulePostScenarios(t *testing.T) {
 				t.Fatalf("response = %+v, want %+v", response, *tt.wantTemplate)
 			}
 		})
+	}
+}
+
+func TestCreateSchedulePostReplacesSameEffectiveFromWithoutConflict(t *testing.T) {
+	const validProfessionalID = "550e8400-e29b-41d4-a716-446655440002"
+
+	createdAt := time.Date(2026, time.April, 10, 9, 0, 0, 0, time.UTC)
+	baseVersion := appointments.ScheduleTemplateVersion{
+		ID:            "550e8400-e29b-41d4-a716-446655440011",
+		TemplateID:    "550e8400-e29b-41d4-a716-446655440010",
+		VersionNumber: 1,
+		EffectiveFrom: time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+		CreatedAt:     createdAt,
+	}
+
+	recurrences := []json.RawMessage{
+		json.RawMessage(`{"days":[1,3],"start_time":"09:00","end_time":"12:00","slot_duration_minutes":30}`),
+		json.RawMessage(`{"days":[1,3,5],"start_time":"08:00","end_time":"13:00","slot_duration_minutes":30}`),
+	}
+	var repo *stubAppointmentsRepository
+	repo = &stubAppointmentsRepository{
+		createTemplateFn: func(_ context.Context, params appointments.CreateTemplateParams) (appointments.ScheduleTemplate, error) {
+			if params.ProfessionalID != validProfessionalID {
+				t.Fatalf("professional_id = %q, want %q", params.ProfessionalID, validProfessionalID)
+			}
+			if params.EffectiveFrom != "2026-05-01" {
+				t.Fatalf("effective_from = %q, want %q", params.EffectiveFrom, "2026-05-01")
+			}
+
+			callIndex := repo.createTemplateCalls - 1
+			if callIndex < 0 || callIndex >= len(recurrences) {
+				t.Fatalf("CreateTemplate call index = %d, want within recurrence fixtures", callIndex)
+			}
+			if string(params.Recurrence) != string(recurrences[callIndex]) {
+				t.Fatalf("recurrence = %s, want %s", params.Recurrence, recurrences[callIndex])
+			}
+
+			version := baseVersion
+			version.Recurrence = recurrences[callIndex]
+			return appointments.ScheduleTemplate{
+				ID:             baseVersion.TemplateID,
+				ProfessionalID: validProfessionalID,
+				CreatedAt:      createdAt,
+				UpdatedAt:      createdAt.Add(time.Duration(callIndex) * time.Minute),
+				Versions:       []appointments.ScheduleTemplateVersion{version},
+			}, nil
+		},
+	}
+	server := NewServer(testAppointmentsConfig(), repo, &stubDirectoryLookup{professionalExists: true})
+
+	bodies := []string{
+		`{"professional_id":"` + validProfessionalID + `","effective_from":"2026-05-01","recurrence":{"days":[1,3],"start_time":"09:00","end_time":"12:00","slot_duration_minutes":30}}`,
+		`{"professional_id":"` + validProfessionalID + `","effective_from":"2026-05-01","recurrence":{"days":[1,3,5],"start_time":"08:00","end_time":"13:00","slot_duration_minutes":30}}`,
+	}
+
+	for index, body := range bodies {
+		recorder := httptest.NewRecorder()
+		server.ServeHTTP(recorder, newAuthenticatedRequest(http.MethodPost, "/schedules", bytes.NewBufferString(body)))
+
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("request %d status = %d, want %d; body=%s", index+1, recorder.Code, http.StatusCreated, recorder.Body.String())
+		}
+
+		var response appointments.ScheduleTemplate
+		if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+			t.Fatalf("request %d decode response: %v", index+1, err)
+		}
+		if len(response.Versions) != 1 {
+			t.Fatalf("request %d versions len = %d, want 1", index+1, len(response.Versions))
+		}
+		if response.Versions[0].ID != baseVersion.ID || response.Versions[0].VersionNumber != baseVersion.VersionNumber {
+			t.Fatalf("request %d version identity = %s/%d, want %s/%d", index+1, response.Versions[0].ID, response.Versions[0].VersionNumber, baseVersion.ID, baseVersion.VersionNumber)
+		}
+		if string(response.Versions[0].Recurrence) != string(recurrences[index]) {
+			t.Fatalf("request %d recurrence = %s, want %s", index+1, response.Versions[0].Recurrence, recurrences[index])
+		}
+	}
+
+	if repo.createTemplateCalls != 2 {
+		t.Fatalf("CreateTemplate calls = %d, want 2", repo.createTemplateCalls)
 	}
 }
 

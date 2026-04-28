@@ -36,6 +36,8 @@ describe('WeeklySchedulePage', () => {
     expect(screen.getByRole('heading', { name: /editor semanal/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /preview semanal/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /conflictos futuros/i })).toBeInTheDocument();
+    expect(screen.getByText(/si ya existe una versión para esa fecha/i)).toBeInTheDocument();
+    expect(screen.getByText(/se reemplaza como corrección/i)).toBeInTheDocument();
 
     const saveButton = screen.getByRole('button', { name: /guardar versión semanal/i });
     expect(saveButton).toBeDisabled();

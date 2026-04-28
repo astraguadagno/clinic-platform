@@ -194,7 +194,8 @@ paths:
                   value:
                     error: failed to load schedule
     post:
-      summary: Create a schedule template version
+      summary: Create or replace a schedule template version
+      description: Creates a new effective-dated schedule version. If the same professional already has a version for the requested `effective_from`, the existing version is replaced as a correction instead of returning a duplicate-date conflict.
       security:
         - BearerAuth: []
       requestBody:
@@ -205,7 +206,7 @@ paths:
               $ref: '#/components/schemas/CreateScheduleRequest'
       responses:
         '201':
-          description: Schedule created
+          description: Schedule created or same-date version replaced
           content:
             application/json:
               schema:
@@ -249,16 +250,6 @@ paths:
                 forbidden_professional_scope:
                   value:
                     error: forbidden professional scope
-        '409':
-          description: A schedule version already exists for the effective date
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                duplicate_effective_date:
-                  value:
-                    error: schedule version already exists for effective date
         '503':
           description: Directory service unavailable while validating professional references
           content:

@@ -19,7 +19,10 @@ export function EffectiveFromPanel({ effectiveFrom, reason, onEffectiveFromChang
           value={effectiveFrom}
           onChange={(event) => onEffectiveFromChange(event.target.value)}
         />
-        <span className="helper">Todo cambio impacta la agenda futura desde esta fecha en adelante.</span>
+        <span className="helper">
+          Todo cambio impacta la agenda futura desde esta fecha en adelante. Si ya existe una versión para esa fecha,
+          se reemplaza como corrección y no se crea una versión duplicada.
+        </span>
       </div>
 
       <div className="field">
