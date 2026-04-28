@@ -37,6 +37,14 @@ describe('appointments API auth transport', () => {
       },
       reason: 'Nueva versión semanal',
     });
+    await appointments.createConsultation({
+      professional_id: 'professional-1',
+      patient_id: 'patient-1',
+      source: 'doctor',
+      scheduled_start: '2026-04-08T10:00:00Z',
+      scheduled_end: '2026-04-08T10:30:00Z',
+    });
+    await appointments.updateConsultationStatus({ id: 'consultation-1', status: 'cancelled' });
 
     expect(requestMock).toHaveBeenNthCalledWith(1, '/appointments-api', '/slots', {
       query: { professional_id: 'professional-1', date: '2026-04-08' },
@@ -73,6 +81,22 @@ describe('appointments API auth transport', () => {
         },
         reason: 'Nueva versión semanal',
       },
+      auth: true,
+    });
+    expect(requestMock).toHaveBeenNthCalledWith(6, '/appointments-api', '/consultations', {
+      method: 'POST',
+      body: {
+        professional_id: 'professional-1',
+        patient_id: 'patient-1',
+        source: 'doctor',
+        scheduled_start: '2026-04-08T10:00:00Z',
+        scheduled_end: '2026-04-08T10:30:00Z',
+      },
+      auth: true,
+    });
+    expect(requestMock).toHaveBeenNthCalledWith(7, '/appointments-api', '/consultations', {
+      method: 'PATCH',
+      body: { id: 'consultation-1', status: 'cancelled' },
       auth: true,
     });
   });

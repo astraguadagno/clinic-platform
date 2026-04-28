@@ -24,7 +24,7 @@ Incomplete tasks: 1.1, 1.2, 1.3, 3.3, 5.2, and backlog follow-up B.1. The same-d
 Skipped because the user explicitly constrained: NEVER build after changes. Do not run build commands.
 ```
 
-**Tests**: ✅ 8 focused tests passed / ❌ 0 failed / ⚠️ 0 skipped
+**Tests**: ✅ 26 focused tests passed / ❌ 0 failed / ⚠️ 0 skipped
 ```text
 go test ./internal/appointments -run 'TestCreateTemplate(StatementReplacesSameEffectiveFromVersion|CreatesInitialTemplateVersion|RejectsInvalidRecurrencePayload)$' -count=1
 ok   clinic-platform/services/appointments-service/internal/appointments 0.978s
@@ -38,6 +38,22 @@ ok   clinic-platform/services/appointments-service/internal/http 0.620s
 npm test -- --run src/features/schedule/WeeklySchedulePage.test.tsx
 ✓ src/features/schedule/WeeklySchedulePage.test.tsx (3 tests) 86ms
 Test Files 1 passed (1); Tests 3 passed (3); Duration 726ms
+
+npm test -- src/features/schedule/ScheduleDemo.test.tsx src/features/schedule/agendaAdapter.test.ts src/api/appointments.test.ts
+✓ src/api/appointments.test.ts (5 tests) 11ms
+✓ src/features/schedule/agendaAdapter.test.ts (3 tests) 2ms
+✓ src/features/schedule/ScheduleDemo.test.tsx (10 tests) 219ms
+Test Files 3 passed (3); Tests 18 passed (18); Duration 846ms
+
+Docker API smoke, after repairing local appointments DB schema drift:
+POST /consultations with scheduled_start/scheduled_end → 201
+GET /agenda/week → 200 with the standalone consultation visible
+
+docker compose -f deploy/docker-compose.yml config
+resolved successfully with appointments-db-migrator dependency chain
+
+docker compose -f deploy/docker-compose.yml up appointments-db-migrator
+completed with exit code 0 against current local appointments volume
 ```
 
 **Coverage**: ➖ Not run; focused verification only and no build/quality commands per user constraint.
@@ -63,6 +79,8 @@ Test Files 1 passed (1); Tests 3 passed (3); Duration 726ms
 | Unit/structural | 3 focused | `repository_test.go` | go test |
 | Integration | 2 focused | `repository_postgres_integration_test.go` | go test + Postgres test helper |
 | Component integration | 3 | `WeeklySchedulePage.test.tsx` | Vitest + Testing Library |
+| Agenda booking component/adapter/API | 18 focused | `ScheduleDemo.test.tsx`, `agendaAdapter.test.ts`, `appointments.test.ts` | Vitest + Testing Library |
+| Local Docker schema reconciliation | 2 focused | `deploy/docker-compose.yml`, `008_reconcile_local_schema.sql` | docker compose config + migrator run |
 | E2E | 0 | — | Not available |
 
 ---
@@ -99,6 +117,8 @@ Test Files 1 passed (1); Tests 3 passed (3); Duration 726ms
 | Preserve same row/id/version number on replacement | ✅ Implemented | Integration test asserts same template id, same version id, same version number, one persisted version row. |
 | API docs explain create-or-replace | ✅ Implemented | OpenAPI summary/description and 201 response updated; duplicate-date 409 removed from docs. |
 | UI explains replacement | ✅ Implemented | `EffectiveFromPanel` helper copy explicitly says same-date versions are replaced as corrections, not duplicated. |
+| Agenda can book generated template slots | ✅ Implemented | Virtual template slots now receive stable synthetic IDs in the adapter, and booking them calls `POST /consultations` with `scheduled_start`/`scheduled_end` instead of legacy `/appointments` by persisted `slot_id`. |
+| Existing Docker volumes receive required appointments schema | ✅ Implemented | `appointments-db-migrator` runs an idempotent reconciliation SQL before `appointments-service` starts, adding missing consultation columns, nullable `slot_id`, schedule tables, constraints, and indexes where safe. |
 
 ---
 
@@ -115,13 +135,15 @@ No `design.md` artifact was present for this change, so design conformance could
 **WARNING**
 - Strict TDD evidence remains partial: `apply-progress.md` honestly records that RED-first evidence for earlier repository/UI/OpenAPI work cannot be reconstructed from available artifacts.
 - Six broader/backlog tasks remain unchecked/incomplete in `tasks.md`; they are outside the same-date replacement behavior but mean the whole change is not fully complete.
+- Local Docker schema reconciliation is intentionally pragmatic, not a replacement for a tracked migration framework. It fails rather than inventing dates if old consultations cannot be backfilled from slots.
 
 **SUGGESTION**
 - Treat backlog item B.1 as a separate architecture refactor, not a blocker for this same-date replacement behavior.
+- Later replace the pragmatic reconciliation with a real tracked migration system so local/dev/prod schema state is explicit.
 
 ---
 
 ### Verdict
 PASS WITH WARNINGS for the same-date replacement behavior.
 
-The implemented repository/HTTP/UI behavior matches the same-date `effective_from` replacement requirement, and focused tests pass. The remaining warnings are partial historical Strict TDD evidence and broader/backlog tasks that are intentionally outside this behavior slice.
+The implemented repository/HTTP/UI behavior matches the same-date `effective_from` replacement requirement, generated template slots can now be selected/booked via standalone consultations, Docker local schema drift is reconciled pragmatically, and focused tests pass. The remaining warnings are partial historical Strict TDD evidence, migration-framework debt, and broader/backlog tasks that are intentionally outside this behavior slice.

@@ -7,24 +7,30 @@ import { ScheduleDemo } from './ScheduleDemo';
 const {
 	cancelAppointmentMock,
 	createAppointmentMock,
+	createConsultationMock,
 	createSlotsBulkMock,
 	fetchWeekAgendaMock,
 	listProfessionalsMock,
 	listPatientsMock,
+	updateConsultationStatusMock,
 } = vi.hoisted(() => ({
 	cancelAppointmentMock: vi.fn(),
 	createAppointmentMock: vi.fn(),
+	createConsultationMock: vi.fn(),
 	createSlotsBulkMock: vi.fn(),
 	fetchWeekAgendaMock: vi.fn(),
 	listProfessionalsMock: vi.fn(),
 	listPatientsMock: vi.fn(),
+	updateConsultationStatusMock: vi.fn(),
 }));
 
 vi.mock('../../api/appointments', () => ({
 	cancelAppointment: cancelAppointmentMock,
 	createAppointment: createAppointmentMock,
+	createConsultation: createConsultationMock,
 	createSlotsBulk: createSlotsBulkMock,
 	fetchWeekAgenda: fetchWeekAgendaMock,
+	updateConsultationStatus: updateConsultationStatusMock,
 }));
 
 vi.mock('../../api/directory', () => ({
@@ -45,10 +51,12 @@ describe('ScheduleDemo weekly operational board', () => {
 	beforeEach(() => {
 		cancelAppointmentMock.mockReset();
 		createAppointmentMock.mockReset();
+		createConsultationMock.mockReset();
 		createSlotsBulkMock.mockReset();
 		fetchWeekAgendaMock.mockReset();
 		listProfessionalsMock.mockReset();
 		listPatientsMock.mockReset();
+		updateConsultationStatusMock.mockReset();
 	});
 
 	it('renders the explicit forbidden agenda branch without bootstrapping schedule data', () => {
@@ -185,6 +193,43 @@ describe('ScheduleDemo weekly operational board', () => {
 		expect(fetchWeekAgendaMock).toHaveBeenCalledTimes(2);
 	});
 
+	it('books generated template slots as consultations with an explicit scheduled range', async () => {
+		listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
+		listPatientsMock.mockResolvedValue({ items: [activePatient(), secondPatient()] });
+		fetchWeekAgendaMock
+			.mockResolvedValueOnce(weekAgenda({
+				'2026-04-08': { slots: [availableSlot('', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')] },
+			}))
+			.mockResolvedValueOnce(weekAgenda({
+				'2026-04-08': {
+					consultations: [scheduledConsultation('consultation-1', null, 'patient-2', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')],
+				},
+			}));
+		createConsultationMock.mockResolvedValue({ id: 'consultation-1' });
+
+		render(<ScheduleDemo agendaMode={{ kind: 'operational-shared' }} onSessionInvalid={vi.fn()} />);
+
+		fireEvent.click((await screen.findAllByRole('button', { name: /Mié 08\/04/i }))[0]);
+		fireEvent.click(await screen.findByRole('button', { name: /Mié 08\/04 .*10:00 - 10:30 UTC/i }));
+		fireEvent.click(screen.getByRole('button', { name: 'Reservar turno' }));
+
+		const bookingDialog = await screen.findByRole('dialog', { name: /Reservar turno/i });
+		fireEvent.change(within(bookingDialog).getByLabelText('Buscar paciente'), { target: { value: 'maria' } });
+		fireEvent.click(within(bookingDialog).getByRole('button', { name: /María Gómez/i }));
+		fireEvent.click(within(bookingDialog).getByRole('button', { name: 'Confirmar reserva' }));
+
+		await waitFor(() => {
+			expect(createConsultationMock).toHaveBeenCalledWith({
+				patient_id: 'patient-2',
+				professional_id: 'professional-1',
+				source: 'secretary',
+				scheduled_start: '2026-04-08T10:00:00Z',
+				scheduled_end: '2026-04-08T10:30:00Z',
+			});
+		});
+		expect(createAppointmentMock).not.toHaveBeenCalled();
+	});
+
 	it('opens slot generation through a modal bound to the selected day', async () => {
 		listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
 		listPatientsMock.mockResolvedValue({ items: [activePatient()] });
@@ -257,6 +302,37 @@ describe('ScheduleDemo weekly operational board', () => {
 
 		expect(await screen.findByText(/volvió a quedar disponible/i)).toBeInTheDocument();
 		expect(within(screen.getByTestId('board-cell-2026-04-08-09:00')).getByText('Cancelado')).toBeInTheDocument();
+	});
+
+	it('cancels standalone consultations through the consultation status endpoint', async () => {
+		listProfessionalsMock.mockResolvedValue({ items: [activeProfessional()] });
+		listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+		fetchWeekAgendaMock
+			.mockResolvedValueOnce(weekAgenda({
+				'2026-04-08': {
+					consultations: [scheduledConsultation('consultation-standalone', null, 'patient-1', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')],
+				},
+			}))
+			.mockResolvedValueOnce(weekAgenda({
+				'2026-04-08': {
+					slots: [availableSlot('', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')],
+					consultations: [cancelledConsultation('consultation-standalone', null, 'patient-1', '2026-04-08T10:00:00Z', '2026-04-08T10:30:00Z')],
+				},
+			}));
+		updateConsultationStatusMock.mockResolvedValue({ id: 'consultation-standalone', status: 'cancelled' });
+
+		render(<ScheduleDemo agendaMode={{ kind: 'doctor-own', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+		expect(await screen.findByText('Juan Pérez')).toBeInTheDocument();
+		fireEvent.click(await screen.findByRole('button', { name: 'Cancelar' }));
+
+		await waitFor(() => {
+			expect(updateConsultationStatusMock).toHaveBeenCalledWith({
+				id: 'consultation-standalone',
+				status: 'cancelled',
+			});
+		});
+		expect(cancelAppointmentMock).not.toHaveBeenCalled();
 	});
 });
 

@@ -73,7 +73,12 @@ describe('WeeklyScheduleWorkspace', () => {
       />,
     );
 
-    expect(await screen.findByText('Ana Médica')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(listProfessionalsMock).toHaveBeenCalled();
+      expect(getScheduleTemplateMock).toHaveBeenCalled();
+    });
+
+    expect(screen.getByText('Ana Médica')).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Profesional' })).not.toBeInTheDocument();
     expect(screen.getByText(/solo podés preparar versiones sobre tu agenda profesional/i)).toBeInTheDocument();
   });

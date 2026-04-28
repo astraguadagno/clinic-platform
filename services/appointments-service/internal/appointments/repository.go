@@ -457,10 +457,18 @@ func (r *Repository) CreateConsultation(ctx context.Context, params CreateConsul
 
 	query := `
 		INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		SELECT NULL, $1, $2, $3, $4, $5, $6
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM consultations
+			WHERE professional_id = $1
+			  AND status IN ('scheduled', 'checked_in')
+			  AND scheduled_start < $5
+			  AND scheduled_end > $4
+		)
 		RETURNING id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
 	`
-	args := []any{validated.slotID, validated.professionalID, validated.patientID, validated.source, validated.scheduledStart, validated.scheduledEnd, validated.notes}
+	args := []any{validated.professionalID, validated.patientID, validated.source, validated.scheduledStart, validated.scheduledEnd, validated.notes}
 	if validated.slotID != nil {
 		query = `
 			INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
@@ -474,6 +482,9 @@ func (r *Repository) CreateConsultation(ctx context.Context, params CreateConsul
 
 	consultation, err := scanConsultation(r.db.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
+		if validated.slotID == nil {
+			return Consultation{}, ErrConflict
+		}
 		return Consultation{}, ErrNotFound
 	}
 	if err != nil {

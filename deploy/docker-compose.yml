@@ -83,6 +83,24 @@ services:
       directory-db:
         condition: service_healthy
 
+  appointments-db-migrator:
+    image: postgres:17-alpine
+    container_name: appointments-db-migrator
+    environment:
+      PGPASSWORD: appointments
+    command:
+      - sh
+      - -ec
+      - >-
+        psql -h appointments-db -p 5432 -U appointments -d appointments
+        -v ON_ERROR_STOP=1
+        -f /migrations/008_reconcile_local_schema.sql
+    volumes:
+      - ../services/appointments-service/migrations/008_reconcile_local_schema.sql:/migrations/008_reconcile_local_schema.sql:ro
+    depends_on:
+      appointments-db:
+        condition: service_healthy
+
   appointments-service:
     build:
       context: ../services/appointments-service
@@ -99,8 +117,8 @@ services:
     ports:
       - "8082:8082"
     depends_on:
-      appointments-db:
-        condition: service_healthy
+      appointments-db-migrator:
+        condition: service_completed_successfully
       directory-service:
         condition: service_started
 

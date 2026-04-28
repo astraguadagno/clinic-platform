@@ -128,6 +128,24 @@ export type CreateAppointmentPayload = {
   professional_id: string;
 };
 
+export type CreateConsultationPayload = {
+	slot_id?: string | null;
+	patient_id: string;
+	professional_id: string;
+	source: ConsultationSource;
+	scheduled_start?: string;
+	scheduled_end?: string;
+	notes?: string;
+};
+
+export type UpdateConsultationStatusPayload = {
+	id: string;
+	status: ConsultationStatus;
+	source?: ConsultationSource;
+	check_in_time?: string;
+	reception_notes?: string;
+};
+
 export type BulkCreateSlotsPayload = {
   professional_id: string;
   date: string;
