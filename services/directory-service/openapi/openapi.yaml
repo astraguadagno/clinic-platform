@@ -209,6 +209,58 @@ paths:
         '500':
           $ref: '#/components/responses/CreateEncounterInternalServerError'
 
+  /patients/{id}/clinical-history:
+    get:
+      summary: Get patient clinical history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+      responses:
+        '200':
+          description: Clinical history loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClinicalHistory'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/PatientNotFound'
+        '500':
+          $ref: '#/components/responses/ClinicalHistoryInternalServerError'
+    patch:
+      summary: Update patient clinical history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateClinicalHistoryRequest'
+      responses:
+        '200':
+          description: Clinical history updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClinicalHistory'
+        '400':
+          $ref: '#/components/responses/UpdateClinicalHistoryBadRequest'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/PatientNotFound'
+        '500':
+          $ref: '#/components/responses/ClinicalHistoryInternalServerError'
+
   /professionals:
     get:
       summary: List professionals
@@ -492,6 +544,32 @@ components:
             failed_to_list_encounters:
               value:
                 error: failed to list encounters
+    UpdateClinicalHistoryBadRequest:
+      description: Invalid JSON body or clinical history validation failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_json_body:
+              value:
+                error: invalid json body
+            failed_to_update_clinical_history:
+              value:
+                error: failed to update clinical history
+    ClinicalHistoryInternalServerError:
+      description: Unexpected failure while loading or updating clinical history.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_load_clinical_history:
+              value:
+                error: failed to load clinical history
+            failed_to_update_clinical_history:
+              value:
+                error: failed to update clinical history
   schemas:
     ErrorResponse:
       type: object
@@ -776,6 +854,112 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Encounter'
+
+    ClinicalHistory:
+      type: object
+      required:
+        - id
+        - patient_id
+        - weight_kg
+        - height_cm
+        - antecedentes
+        - allergies
+        - habitual_medication
+        - chronic_conditions
+        - habits
+        - general_observations
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        weight_kg:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 500
+          nullable: true
+        height_cm:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 300
+          nullable: true
+        antecedentes:
+          type: string
+          maxLength: 4000
+          nullable: true
+        allergies:
+          type: string
+          maxLength: 4000
+          nullable: true
+        habitual_medication:
+          type: string
+          maxLength: 4000
+          nullable: true
+        chronic_conditions:
+          type: string
+          maxLength: 4000
+          nullable: true
+        habits:
+          type: string
+          maxLength: 4000
+          nullable: true
+        general_observations:
+          type: string
+          maxLength: 4000
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateClinicalHistoryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        weight_kg:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 500
+        height_cm:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 300
+        antecedentes:
+          type: string
+          maxLength: 4000
+          nullable: true
+        allergies:
+          type: string
+          maxLength: 4000
+          nullable: true
+        habitual_medication:
+          type: string
+          maxLength: 4000
+          nullable: true
+        chronic_conditions:
+          type: string
+          maxLength: 4000
+          nullable: true
+        habits:
+          type: string
+          maxLength: 4000
+          nullable: true
+        general_observations:
+          type: string
+          maxLength: 4000
+          nullable: true
 
     CreateProfessionalRequest:
       type: object

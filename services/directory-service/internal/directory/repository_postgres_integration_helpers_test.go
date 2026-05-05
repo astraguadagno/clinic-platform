@@ -96,7 +96,7 @@ func resetDirectorySchema(t *testing.T, db *sql.DB) {
 func applyDirectoryMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	for _, migration := range []string{"001_init.sql", "002_access_auth.sql", "003_clinical_core.sql"} {
+	for _, migration := range []string{"001_init.sql", "002_access_auth.sql", "003_clinical_core.sql", "004_clinical_history_foundation.sql"} {
 		contents := readDirectoryMigrationFile(t, migration)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -33,6 +33,8 @@ type directoryRepository interface {
 	GetPatientByDocument(ctx context.Context, document string) (directory.Patient, error)
 	CreateEncounter(ctx context.Context, params directory.CreateEncounterParams) (directory.Encounter, error)
 	ListPatientEncounters(ctx context.Context, patientID, professionalID string) ([]directory.Encounter, error)
+	GetClinicalHistory(ctx context.Context, patientID string) (directory.ClinicalHistory, error)
+	UpdateClinicalHistory(ctx context.Context, params directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error)
 	CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error)
 	ListProfessionals(ctx context.Context) ([]directory.Professional, error)
 	GetProfessionalByID(ctx context.Context, id string) (directory.Professional, error)
@@ -201,6 +203,10 @@ func (s *Server) patientByID(w http.ResponseWriter, r *http.Request) {
 		s.patientEncounters(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[1] == "clinical-history" {
+		s.patientClinicalHistory(w, r, parts[0])
+		return
+	}
 
 	http.NotFound(w, r)
 }
@@ -232,6 +238,17 @@ func (s *Server) patientEncounters(w http.ResponseWriter, r *http.Request, patie
 		s.createEncounter(w, r, patientID)
 	default:
 		writeMethodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (s *Server) patientClinicalHistory(w http.ResponseWriter, r *http.Request, patientID string) {
+	switch r.Method {
+	case http.MethodGet:
+		s.getClinicalHistory(w, r, patientID)
+	case http.MethodPatch:
+		s.updateClinicalHistory(w, r, patientID)
+	default:
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodPatch)
 	}
 }
 
@@ -416,6 +433,67 @@ func (s *Server) listPatientEncounters(w http.ResponseWriter, r *http.Request, p
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"items": encounters})
+}
+
+func (s *Server) getClinicalHistory(w http.ResponseWriter, r *http.Request, patientID string) {
+	if _, err := s.currentDoctorUser(r); errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	} else if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, authorizationErrorMessage(err))
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	history, err := s.repo.GetClinicalHistory(r.Context(), patientID)
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load clinical history")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, history)
+}
+
+func (s *Server) updateClinicalHistory(w http.ResponseWriter, r *http.Request, patientID string) {
+	if _, err := s.currentDoctorUser(r); errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	} else if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, authorizationErrorMessage(err))
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	var request directory.UpdateClinicalHistoryParams
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	request.PatientID = patientID
+
+	history, err := s.repo.UpdateClinicalHistory(r.Context(), request)
+	if errors.Is(err, directory.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "failed to update clinical history")
+		return
+	}
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update clinical history")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, history)
 }
 
 func (s *Server) createProfessional(w http.ResponseWriter, r *http.Request) {

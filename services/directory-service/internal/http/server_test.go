@@ -281,6 +281,130 @@ func TestListPatientEncountersReturnsItemsForCurrentProfessional(t *testing.T) {
 	}
 }
 
+func TestGetClinicalHistoryReturnsEmptyHistoryForDoctor(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	now := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		getClinicalHistoryFn: func(_ context.Context, gotPatientID string) (directory.ClinicalHistory, error) {
+			if gotPatientID != patientID {
+				t.Fatalf("patientID = %q, want %q", gotPatientID, patientID)
+			}
+			return directory.ClinicalHistory{ID: "history-1", PatientID: patientID, CreatedAt: now, UpdatedAt: now}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients/"+patientID+"/clinical-history", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var history directory.ClinicalHistory
+	if err := json.NewDecoder(recorder.Body).Decode(&history); err != nil {
+		t.Fatalf("decode history: %v", err)
+	}
+	if history.PatientID != patientID {
+		t.Fatalf("patient_id = %q, want %q", history.PatientID, patientID)
+	}
+	if history.WeightKG != nil || history.Allergies != nil {
+		t.Fatalf("empty history clinical fields = weight %v allergies %v, want nil fields", history.WeightKG, history.Allergies)
+	}
+}
+
+func TestPatchClinicalHistoryUpdatesProvidedFieldsForDoctor(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	allergies := "Penicilina"
+	now := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		updateClinicalHistoryFn: func(_ context.Context, params directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error) {
+			if params.PatientID != patientID {
+				t.Fatalf("patientID = %q, want %q", params.PatientID, patientID)
+			}
+			if params.Allergies == nil || *params.Allergies != " Penicilina " {
+				t.Fatalf("allergies = %v, want raw payload", params.Allergies)
+			}
+			return directory.ClinicalHistory{ID: "history-1", PatientID: patientID, Allergies: &allergies, CreatedAt: now, UpdatedAt: now}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/patients/"+patientID+"/clinical-history", bytes.NewBufferString(`{"allergies":" Penicilina "}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var history directory.ClinicalHistory
+	if err := json.NewDecoder(recorder.Body).Decode(&history); err != nil {
+		t.Fatalf("decode history: %v", err)
+	}
+	if history.Allergies == nil || *history.Allergies != "Penicilina" {
+		t.Fatalf("allergies = %v, want Penicilina", history.Allergies)
+	}
+}
+
+func TestClinicalHistoryReturnsForbiddenForSecretary(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "secretary@clinic.local", Role: "secretary", ProfessionalID: &professionalID, Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients/0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca/clinical-history", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestClinicalHistoryReturnsNotFoundForMissingPatient(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		getClinicalHistoryFn: func(context.Context, string) (directory.ClinicalHistory, error) {
+			return directory.ClinicalHistory{}, directory.ErrNotFound
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients/0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca/clinical-history", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
 func TestLoginReturnsAccessToken(t *testing.T) {
 	repo := &stubDirectoryRepository{
 		authenticateUserFn: func(_ context.Context, email, password string) (directory.User, error) {
@@ -679,6 +803,8 @@ type stubDirectoryRepository struct {
 	getPatientByDocumentFn  func(context.Context, string) (directory.Patient, error)
 	createEncounterFn       func(context.Context, directory.CreateEncounterParams) (directory.Encounter, error)
 	listPatientEncountersFn func(context.Context, string, string) ([]directory.Encounter, error)
+	getClinicalHistoryFn    func(context.Context, string) (directory.ClinicalHistory, error)
+	updateClinicalHistoryFn func(context.Context, directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error)
 	createProfessionalFn    func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error)
 	listProfessionalsFn     func(context.Context) ([]directory.Professional, error)
 	getProfessionalByIDFn   func(context.Context, string) (directory.Professional, error)
@@ -727,6 +853,20 @@ func (s *stubDirectoryRepository) ListPatientEncounters(ctx context.Context, pat
 		return nil, errors.New("unexpected ListPatientEncounters call")
 	}
 	return s.listPatientEncountersFn(ctx, patientID, professionalID)
+}
+
+func (s *stubDirectoryRepository) GetClinicalHistory(ctx context.Context, patientID string) (directory.ClinicalHistory, error) {
+	if s.getClinicalHistoryFn == nil {
+		return directory.ClinicalHistory{}, errors.New("unexpected GetClinicalHistory call")
+	}
+	return s.getClinicalHistoryFn(ctx, patientID)
+}
+
+func (s *stubDirectoryRepository) UpdateClinicalHistory(ctx context.Context, params directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error) {
+	if s.updateClinicalHistoryFn == nil {
+		return directory.ClinicalHistory{}, errors.New("unexpected UpdateClinicalHistory call")
+	}
+	return s.updateClinicalHistoryFn(ctx, params)
 }
 
 func (s *stubDirectoryRepository) CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error) {
