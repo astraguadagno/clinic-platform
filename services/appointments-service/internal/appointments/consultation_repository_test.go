@@ -138,6 +138,56 @@ func TestCreateConsultationAllowsNilSlotIDWithStandaloneScheduleRange(t *testing
 	}
 }
 
+func TestCreateConsultationAllowsRequestedPatientSource(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 16, 10, 0, 0, 0, time.UTC)
+	scheduledStart := time.Date(2026, time.April, 16, 10, 0, 0, 0, time.UTC)
+	scheduledEnd := time.Date(2026, time.April, 16, 10, 1, 0, 0, time.UTC)
+	notes := "Prefiero turno por la tarde"
+
+	repo := NewRepository(newScriptedDB(t, []scriptedQueryResult{{
+		row: newConsultationRow(
+			"550e8400-e29b-41d4-a716-446655440214",
+			nil,
+			"550e8400-e29b-41d4-a716-446655440211",
+			"550e8400-e29b-41d4-a716-446655440212",
+			ConsultationStatusRequested,
+			ConsultationSourcePatient,
+			&notes,
+			scheduledStart,
+			scheduledEnd,
+			nil,
+			nil,
+			now,
+			now,
+			nil,
+		),
+	}}))
+
+	consultation, err := repo.CreateConsultation(context.Background(), CreateConsultationParams{
+		ProfessionalID: "550e8400-e29b-41d4-a716-446655440211",
+		PatientID:      "550e8400-e29b-41d4-a716-446655440212",
+		Status:         ConsultationStatusRequested,
+		Source:         ConsultationSourcePatient,
+		ScheduledStart: &scheduledStart,
+		ScheduledEnd:   &scheduledEnd,
+		Notes:          &notes,
+	})
+	if err != nil {
+		t.Fatalf("CreateConsultation error = %v", err)
+	}
+	if consultation.Status != ConsultationStatusRequested {
+		t.Fatalf("status = %q, want %q", consultation.Status, ConsultationStatusRequested)
+	}
+	if consultation.Source != ConsultationSourcePatient {
+		t.Fatalf("source = %q, want %q", consultation.Source, ConsultationSourcePatient)
+	}
+	if consultation.SlotID != nil {
+		t.Fatalf("slot_id = %v, want nil", consultation.SlotID)
+	}
+}
+
 func TestGetConsultationReturnsConsultation(t *testing.T) {
 	t.Parallel()
 

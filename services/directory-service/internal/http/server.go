@@ -30,6 +30,7 @@ type directoryRepository interface {
 	CreatePatient(ctx context.Context, params directory.CreatePatientParams) (directory.Patient, error)
 	ListPatients(ctx context.Context) ([]directory.Patient, error)
 	GetPatientByID(ctx context.Context, id string) (directory.Patient, error)
+	GetPatientByDocument(ctx context.Context, document string) (directory.Patient, error)
 	CreateEncounter(ctx context.Context, params directory.CreateEncounterParams) (directory.Encounter, error)
 	ListPatientEncounters(ctx context.Context, patientID, professionalID string) ([]directory.Encounter, error)
 	CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error)
@@ -63,6 +64,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/auth/me", s.me)
 	s.mux.HandleFunc("/patients", s.patients)
 	s.mux.HandleFunc("/patients/", s.patientByID)
+	s.mux.HandleFunc("/internal/patients/by-document", s.internalPatientByDocument)
+	s.mux.HandleFunc("/public/professionals", s.publicProfessionals)
 	s.mux.HandleFunc("/professionals", s.professionals)
 	s.mux.HandleFunc("/professionals/", s.professionalByID)
 }
@@ -266,6 +269,44 @@ func (s *Server) professionalByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, professional)
+}
+
+func (s *Server) internalPatientByDocument(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	patient, err := s.repo.GetPatientByDocument(r.Context(), r.URL.Query().Get("document"))
+	if errors.Is(err, directory.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "patient document is required")
+		return
+	}
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load patient")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, patient)
+}
+
+func (s *Server) publicProfessionals(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	professionals, err := s.repo.ListProfessionals(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list professionals")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": professionals})
 }
 
 func (s *Server) createPatient(w http.ResponseWriter, r *http.Request) {

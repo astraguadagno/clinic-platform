@@ -114,6 +114,10 @@ function groupAppointmentsByDate(consultations: Consultation[]) {
 	const byDate = new Map<string, ScheduleBoardAppointment[]>();
 
 	for (const consultation of consultations) {
+		if (consultation.status === 'requested') {
+			continue;
+		}
+
 		const date = consultation.scheduled_start.slice(0, 10);
 		const current = byDate.get(date) ?? [];
 		current.push(adaptConsultationToAppointment(consultation));
@@ -167,7 +171,9 @@ function createStandaloneSlot(appointment: ScheduleBoardAppointment): Slot | nul
 
 function buildTimeBands(weekAgenda: WeekAgenda) {
 	const slotBands = weekAgenda.slots.map((slot) => formatTimeBand(slot.start_time));
-	const consultationBands = weekAgenda.consultations.map((consultation) => formatTimeBand(consultation.scheduled_start));
+	const consultationBands = weekAgenda.consultations
+		.filter((consultation) => consultation.status !== 'requested')
+		.map((consultation) => formatTimeBand(consultation.scheduled_start));
 
 	return [...new Set([...slotBands, ...consultationBands])].sort();
 }

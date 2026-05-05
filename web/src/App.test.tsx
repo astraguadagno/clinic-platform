@@ -52,9 +52,33 @@ vi.mock('./features/directory/DirectoryDemo', () => ({
   DirectoryDemo: ({ directoryMode }: { directoryMode: { kind: string } }) => <div>directory:{directoryMode.kind}</div>,
 }));
 
+vi.mock('./features/patient-request/PatientRequestSurface', () => ({
+  PatientRequestSurface: () => <div>patient-request-surface</div>,
+}));
+
 describe('App actor-aware shell', () => {
   beforeEach(() => {
     useAuthSessionMock.mockReset();
+    window.location.hash = '';
+  });
+
+  it('renders patient request surface before login when the public hash is active', () => {
+    window.location.hash = '#patient-request';
+    useAuthSessionMock.mockReturnValue({
+      status: 'anonymous',
+      accessToken: null,
+      expiresAt: null,
+      user: null,
+      errorMessage: '',
+      isSubmitting: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+    });
+
+    render(<App />);
+
+    expect(screen.getByText('patient-request-surface')).toBeInTheDocument();
+    expect(screen.queryByText('login-screen')).not.toBeInTheDocument();
   });
 
   it('shows agenda, weekly schedule and patients for doctors, defaulting to agenda', () => {

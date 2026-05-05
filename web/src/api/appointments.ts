@@ -6,10 +6,12 @@ import type {
   CreateScheduleTemplateVersionPayload,
   CreateAppointmentPayload,
   CreateConsultationPayload,
+  CreatePatientRequestPayload,
   UpdateConsultationStatusPayload,
   GetScheduleTemplateFilters,
   ListResponse,
   ListScheduleTemplateVersionFilters,
+  PublicAvailabilitySlot,
   ScheduleTemplate,
   ScheduleTemplateVersion,
   Slot,
@@ -33,6 +35,11 @@ type SlotFilters = {
 };
 
 type WeekAgendaFilters = {
+	professional_id: string;
+	week_start: string;
+};
+
+type PublicAvailabilityFilters = {
 	professional_id: string;
 	week_start: string;
 };
@@ -85,6 +92,17 @@ export function createConsultation(payload: CreateConsultationPayload) {
 		body: payload,
 		auth: true,
 	});
+}
+
+export function createPatientRequest(payload: CreatePatientRequestPayload) {
+	return request<Consultation>(APPOINTMENTS_API_BASE, '/patient-requests', {
+		method: 'POST',
+		body: payload,
+	});
+}
+
+export function listPublicAvailability(filters: PublicAvailabilityFilters) {
+	return request<ListResponse<PublicAvailabilitySlot>>(APPOINTMENTS_API_BASE, '/public/availability', { query: filters });
 }
 
 export function updateConsultationStatus(payload: UpdateConsultationStatusPayload) {

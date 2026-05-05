@@ -15,6 +15,10 @@ export function listProfessionals() {
 	});
 }
 
+export function listPublicProfessionals() {
+	return request<ListResponse<Professional>>(DIRECTORY_API_BASE, '/public/professionals');
+}
+
 export function listPatients() {
 	return request<ListResponse<Patient>>(DIRECTORY_API_BASE, '/patients', {
 		auth: true,

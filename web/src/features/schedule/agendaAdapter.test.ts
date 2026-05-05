@@ -108,6 +108,36 @@ describe('agendaAdapter', () => {
 		expect(board.days[2]?.summary).toMatchObject({ available: 0, booked: 1 });
 	});
 
+	it('keeps requested patient consultations out of occupied agenda slots', () => {
+		const weekAgenda: WeekAgenda = {
+			professional_id: 'professional-1',
+			week_start: '2026-04-06',
+			templates: [],
+			blocks: [],
+			consultations: [
+				consultation({
+					id: 'consultation-requested',
+					slot_id: null,
+					status: 'requested',
+					source: 'patient',
+					scheduled_start: '2026-04-08T10:00:00Z',
+					scheduled_end: '2026-04-08T10:01:00Z',
+				}),
+			],
+			slots: [slot({ id: '', start_time: '2026-04-08T10:00:00Z', end_time: '2026-04-08T10:30:00Z', status: 'available' })],
+		};
+
+		const board = buildScheduleBoardModel(weekAgenda);
+
+		expect(board.timeBands).toEqual(['10:00']);
+		expect(board.days[2]?.appointments).toHaveLength(0);
+		expect(board.days[2]?.slots[0]).toMatchObject({
+			id: 'template-slot-professional-1-2026-04-08T10:00:00Z-2026-04-08T10:30:00Z',
+			status: 'available',
+		});
+		expect(board.days[2]?.summary).toMatchObject({ available: 1, booked: 0 });
+	});
+
 	it('keeps cancelled consultations visible in the summary', () => {
 		const weekAgenda: WeekAgenda = {
 			professional_id: 'professional-1',

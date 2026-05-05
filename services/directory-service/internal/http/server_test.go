@@ -646,10 +646,37 @@ func TestHealthReturnsStatusOK(t *testing.T) {
 	}
 }
 
+func TestInternalPatientByDocumentReturnsPatientWithoutAuth(t *testing.T) {
+	repo := &stubDirectoryRepository{
+		getPatientByDocumentFn: func(_ context.Context, document string) (directory.Patient, error) {
+			if document != "12345678" {
+				t.Fatalf("document = %q, want 12345678", document)
+			}
+			return directory.Patient{ID: "patient-1", Document: document, Active: true}, nil
+		},
+	}
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/internal/patients/by-document?document=12345678", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	var patient directory.Patient
+	if err := json.NewDecoder(recorder.Body).Decode(&patient); err != nil {
+		t.Fatalf("decode patient: %v", err)
+	}
+	if patient.ID != "patient-1" || patient.Document != "12345678" {
+		t.Fatalf("patient = %+v, want patient-1 with document", patient)
+	}
+}
+
 type stubDirectoryRepository struct {
 	createPatientFn         func(context.Context, directory.CreatePatientParams) (directory.Patient, error)
 	listPatientsFn          func(context.Context) ([]directory.Patient, error)
 	getPatientByIDFn        func(context.Context, string) (directory.Patient, error)
+	getPatientByDocumentFn  func(context.Context, string) (directory.Patient, error)
 	createEncounterFn       func(context.Context, directory.CreateEncounterParams) (directory.Encounter, error)
 	listPatientEncountersFn func(context.Context, string, string) ([]directory.Encounter, error)
 	createProfessionalFn    func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error)
@@ -679,6 +706,13 @@ func (s *stubDirectoryRepository) GetPatientByID(ctx context.Context, id string)
 		return directory.Patient{}, errors.New("unexpected GetPatientByID call")
 	}
 	return s.getPatientByIDFn(ctx, id)
+}
+
+func (s *stubDirectoryRepository) GetPatientByDocument(ctx context.Context, document string) (directory.Patient, error) {
+	if s.getPatientByDocumentFn == nil {
+		return directory.Patient{}, errors.New("unexpected GetPatientByDocument call")
+	}
+	return s.getPatientByDocumentFn(ctx, document)
 }
 
 func (s *stubDirectoryRepository) CreateEncounter(ctx context.Context, params directory.CreateEncounterParams) (directory.Encounter, error) {

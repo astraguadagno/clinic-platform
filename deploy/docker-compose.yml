@@ -95,8 +95,10 @@ services:
         psql -h appointments-db -p 5432 -U appointments -d appointments
         -v ON_ERROR_STOP=1
         -f /migrations/008_reconcile_local_schema.sql
+        -f /migrations/009_patient_request_flow.sql
     volumes:
       - ../services/appointments-service/migrations/008_reconcile_local_schema.sql:/migrations/008_reconcile_local_schema.sql:ro
+      - ../services/appointments-service/migrations/009_patient_request_flow.sql:/migrations/009_patient_request_flow.sql:ro
     depends_on:
       appointments-db:
         condition: service_healthy

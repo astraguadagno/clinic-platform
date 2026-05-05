@@ -82,6 +82,7 @@ type CreateConsultationParams struct {
 	SlotID         *string            `json:"slot_id,omitempty"`
 	ProfessionalID string             `json:"professional_id"`
 	PatientID      string             `json:"patient_id"`
+	Status         ConsultationStatus `json:"status,omitempty"`
 	Source         ConsultationSource `json:"source"`
 	ScheduledStart *time.Time         `json:"scheduled_start,omitempty"`
 	ScheduledEnd   *time.Time         `json:"scheduled_end,omitempty"`
@@ -456,28 +457,29 @@ func (r *Repository) CreateConsultation(ctx context.Context, params CreateConsul
 	}
 
 	query := `
-		INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
-		SELECT NULL, $1, $2, $3, $4, $5, $6
+		INSERT INTO consultations (slot_id, professional_id, patient_id, status, source, scheduled_start, scheduled_end, notes)
+		SELECT NULL, $1, $2, $3, $4, $5, $6, $7
 		WHERE NOT EXISTS (
 			SELECT 1
 			FROM consultations
 			WHERE professional_id = $1
+			  AND $3 IN ('scheduled', 'checked_in')
 			  AND status IN ('scheduled', 'checked_in')
-			  AND scheduled_start < $5
-			  AND scheduled_end > $4
+			  AND scheduled_start < $6
+			  AND scheduled_end > $5
 		)
 		RETURNING id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
 	`
-	args := []any{validated.professionalID, validated.patientID, validated.source, validated.scheduledStart, validated.scheduledEnd, validated.notes}
+	args := []any{validated.professionalID, validated.patientID, validated.status, validated.source, validated.scheduledStart, validated.scheduledEnd, validated.notes}
 	if validated.slotID != nil {
 		query = `
-			INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
-			SELECT $1, $2, $3, $4, start_time, end_time, $5
+			INSERT INTO consultations (slot_id, professional_id, patient_id, status, source, scheduled_start, scheduled_end, notes)
+			SELECT $1, $2, $3, $4, $5, start_time, end_time, $6
 			FROM availability_slots
 			WHERE id = $1 AND professional_id = $2
 			RETURNING id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
 		`
-		args = []any{validated.slotID, validated.professionalID, validated.patientID, validated.source, validated.notes}
+		args = []any{validated.slotID, validated.professionalID, validated.patientID, validated.status, validated.source, validated.notes}
 	}
 
 	consultation, err := scanConsultation(r.db.QueryRowContext(ctx, query, args...))
@@ -1486,6 +1488,7 @@ type validatedCreateConsultationParams struct {
 	professionalID string
 	patientID      string
 	source         ConsultationSource
+	status         ConsultationStatus
 	scheduledStart time.Time
 	scheduledEnd   time.Time
 	notes          *string
@@ -1506,6 +1509,13 @@ func validateCreateConsultationParams(params CreateConsultationParams) (validate
 	if _, err := uuid.Parse(patientID); err != nil {
 		return validatedCreateConsultationParams{}, ErrValidation
 	}
+	status := params.Status
+	if status == "" {
+		status = ConsultationStatusScheduled
+	}
+	if !status.IsValid() {
+		return validatedCreateConsultationParams{}, ErrValidation
+	}
 	if !params.Source.IsValid() {
 		return validatedCreateConsultationParams{}, ErrValidation
 	}
@@ -1514,6 +1524,7 @@ func validateCreateConsultationParams(params CreateConsultationParams) (validate
 		professionalID: professionalID,
 		patientID:      patientID,
 		source:         params.Source,
+		status:         status,
 	}
 
 	if params.SlotID != nil {

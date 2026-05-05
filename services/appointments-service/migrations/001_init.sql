@@ -39,12 +39,12 @@ CREATE TABLE consultations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     cancelled_at TIMESTAMPTZ,
     CONSTRAINT consultations_slot_fk FOREIGN KEY (slot_id) REFERENCES availability_slots(id),
-    CONSTRAINT consultations_status_valid CHECK (status IN ('scheduled', 'checked_in', 'completed', 'cancelled', 'no_show')),
+    CONSTRAINT consultations_status_valid CHECK (status IN ('scheduled', 'requested', 'checked_in', 'completed', 'cancelled', 'no_show')),
     CONSTRAINT consultations_cancelled_at_consistency CHECK (
         (status = 'cancelled' AND cancelled_at IS NOT NULL) OR
-        (status IN ('scheduled', 'checked_in', 'completed', 'no_show') AND cancelled_at IS NULL)
+        (status IN ('scheduled', 'requested', 'checked_in', 'completed', 'no_show') AND cancelled_at IS NULL)
     ),
-    CONSTRAINT consultations_source_valid CHECK (source IN ('online', 'secretary', 'doctor')),
+    CONSTRAINT consultations_source_valid CHECK (source IN ('online', 'secretary', 'doctor', 'patient')),
     CONSTRAINT consultations_scheduled_range_valid CHECK (scheduled_start < scheduled_end)
 );
 
