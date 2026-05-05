@@ -2,6 +2,7 @@ package directory
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -62,6 +63,67 @@ func TestRepositoryIntegrationCreateEncounterImplicitlyCreatesChartAndInitialNot
 	}
 	if encounter.InitialNote.Content != persistedNote.Content {
 		t.Fatalf("returned initial note content = %q, want %q", encounter.InitialNote.Content, persistedNote.Content)
+	}
+}
+
+func TestRepositoryIntegrationClinicalHistoryLifecyclePreservesPartialUpdates(t *testing.T) {
+	repo, _ := newPostgresIntegrationRepository(t)
+
+	patient := seedClinicalPatient(t, repo, "history-lifecycle")
+
+	emptyHistory, err := repo.GetClinicalHistory(context.Background(), patient.ID)
+	if err != nil {
+		t.Fatalf("get empty clinical history: %v", err)
+	}
+	if emptyHistory.PatientID != patient.ID {
+		t.Fatalf("empty history patient_id = %q, want %q", emptyHistory.PatientID, patient.ID)
+	}
+	if emptyHistory.WeightKG != nil || emptyHistory.Allergies != nil {
+		t.Fatalf("empty history fields = weight %v allergies %v, want nil", emptyHistory.WeightKG, emptyHistory.Allergies)
+	}
+
+	weight := 72.5
+	allergies := " Penicilina "
+	updated, err := repo.UpdateClinicalHistory(context.Background(), UpdateClinicalHistoryParams{
+		PatientID: patient.ID,
+		WeightKG:  &weight,
+		Allergies: &allergies,
+	})
+	if err != nil {
+		t.Fatalf("update clinical history: %v", err)
+	}
+	if updated.WeightKG == nil || *updated.WeightKG != 72.5 {
+		t.Fatalf("updated weight = %v, want 72.5", updated.WeightKG)
+	}
+	if updated.Allergies == nil || *updated.Allergies != "Penicilina" {
+		t.Fatalf("updated allergies = %v, want Penicilina", updated.Allergies)
+	}
+
+	height := 168.2
+	patched, err := repo.UpdateClinicalHistory(context.Background(), UpdateClinicalHistoryParams{
+		PatientID: patient.ID,
+		HeightCM:  &height,
+	})
+	if err != nil {
+		t.Fatalf("patch clinical history: %v", err)
+	}
+	if patched.WeightKG == nil || *patched.WeightKG != 72.5 {
+		t.Fatalf("patched weight = %v, want preserved 72.5", patched.WeightKG)
+	}
+	if patched.HeightCM == nil || *patched.HeightCM != 168.2 {
+		t.Fatalf("patched height = %v, want 168.2", patched.HeightCM)
+	}
+	if patched.Allergies == nil || *patched.Allergies != "Penicilina" {
+		t.Fatalf("patched allergies = %v, want preserved Penicilina", patched.Allergies)
+	}
+}
+
+func TestRepositoryIntegrationClinicalHistoryMissingPatientReturnsNotFound(t *testing.T) {
+	repo, _ := newPostgresIntegrationRepository(t)
+
+	_, err := repo.GetClinicalHistory(context.Background(), "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("get missing patient error = %v, want %v", err, ErrNotFound)
 	}
 }
 
