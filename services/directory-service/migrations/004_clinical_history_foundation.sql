@@ -15,3 +15,15 @@ CREATE TABLE IF NOT EXISTS clinical_history (
 );
 
 CREATE INDEX IF NOT EXISTS clinical_history_patient_id_idx ON clinical_history (patient_id);
+
+ALTER TABLE clinical_notes ALTER COLUMN chart_id DROP NOT NULL;
+ALTER TABLE clinical_notes ALTER COLUMN encounter_id DROP NOT NULL;
+ALTER TABLE clinical_notes ADD COLUMN IF NOT EXISTS consultation_id UUID;
+
+CREATE INDEX IF NOT EXISTS clinical_notes_patient_standalone_created_idx
+    ON clinical_notes (patient_id, created_at DESC)
+    WHERE kind = 'standalone';
+
+CREATE INDEX IF NOT EXISTS clinical_notes_consultation_id_idx
+    ON clinical_notes (consultation_id)
+    WHERE consultation_id IS NOT NULL;

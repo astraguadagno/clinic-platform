@@ -261,6 +261,130 @@ paths:
         '500':
           $ref: '#/components/responses/ClinicalHistoryInternalServerError'
 
+  /patients/{id}/clinical-notes:
+    get:
+      summary: List standalone patient clinical notes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+      responses:
+        '200':
+          description: Clinical notes listed in reverse chronological order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientClinicalNoteListResponse'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/PatientNotFound'
+        '500':
+          $ref: '#/components/responses/ListClinicalNotesInternalServerError'
+    post:
+      summary: Create standalone patient clinical note
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientClinicalNoteRequest'
+      responses:
+        '201':
+          description: Clinical note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientClinicalNote'
+        '400':
+          $ref: '#/components/responses/CreateClinicalNoteBadRequest'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/PatientNotFound'
+        '500':
+          $ref: '#/components/responses/CreateClinicalNoteInternalServerError'
+
+  /patients/{id}/clinical-notes/{noteID}:
+    get:
+      summary: Get standalone patient clinical note
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+        - $ref: '#/components/parameters/ClinicalNoteID'
+      responses:
+        '200':
+          description: Clinical note found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientClinicalNote'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/ClinicalNoteNotFound'
+        '500':
+          $ref: '#/components/responses/GetClinicalNoteInternalServerError'
+    patch:
+      summary: Update standalone patient clinical note
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+        - $ref: '#/components/parameters/ClinicalNoteID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientClinicalNoteRequest'
+      responses:
+        '200':
+          description: Clinical note updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientClinicalNote'
+        '400':
+          $ref: '#/components/responses/UpdateClinicalNoteBadRequest'
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/ClinicalNoteNotFound'
+        '500':
+          $ref: '#/components/responses/UpdateClinicalNoteInternalServerError'
+    delete:
+      summary: Delete standalone patient clinical note
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceID'
+        - $ref: '#/components/parameters/ClinicalNoteID'
+      responses:
+        '204':
+          description: Clinical note deleted
+        '401':
+          $ref: '#/components/responses/AuthUnauthorized'
+        '403':
+          $ref: '#/components/responses/ClinicalForbidden'
+        '404':
+          $ref: '#/components/responses/ClinicalNoteNotFound'
+        '500':
+          $ref: '#/components/responses/DeleteClinicalNoteInternalServerError'
+
   /professionals:
     get:
       summary: List professionals
@@ -355,6 +479,13 @@ components:
       required: true
       schema:
         type: string
+    ClinicalNoteID:
+      name: noteID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     CreatePatientBadRequest:
       description: Invalid JSON body or patient validation failure.
@@ -570,6 +701,92 @@ components:
             failed_to_update_clinical_history:
               value:
                 error: failed to update clinical history
+    ClinicalNoteNotFound:
+      description: Standalone clinical note not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            clinical_note_not_found:
+              value:
+                error: clinical note not found
+    CreateClinicalNoteBadRequest:
+      description: Invalid JSON body or clinical note validation failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_json_body:
+              value:
+                error: invalid json body
+            failed_to_create_clinical_note:
+              value:
+                error: failed to create clinical note
+    UpdateClinicalNoteBadRequest:
+      description: Invalid JSON body or clinical note validation failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_json_body:
+              value:
+                error: invalid json body
+            failed_to_update_clinical_note:
+              value:
+                error: failed to update clinical note
+    ListClinicalNotesInternalServerError:
+      description: Unexpected failure while listing clinical notes.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_list_clinical_notes:
+              value:
+                error: failed to list clinical notes
+    GetClinicalNoteInternalServerError:
+      description: Unexpected failure while loading clinical note.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_load_clinical_note:
+              value:
+                error: failed to load clinical note
+    CreateClinicalNoteInternalServerError:
+      description: Unexpected failure while creating clinical note.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_create_clinical_note:
+              value:
+                error: failed to create clinical note
+    UpdateClinicalNoteInternalServerError:
+      description: Unexpected failure while updating clinical note.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_update_clinical_note:
+              value:
+                error: failed to update clinical note
+    DeleteClinicalNoteInternalServerError:
+      description: Unexpected failure while deleting clinical note.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            failed_to_delete_clinical_note:
+              value:
+                error: failed to delete clinical note
   schemas:
     ErrorResponse:
       type: object
@@ -808,6 +1025,65 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    PatientClinicalNote:
+      type: object
+      required:
+        - id
+        - patient_id
+        - professional_id
+        - content
+        - consultation_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        patient_id:
+          type: string
+          format: uuid
+        professional_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+          minLength: 1
+        consultation_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional consultation UUID reference; no cross-service foreign key is enforced.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PatientClinicalNoteListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatientClinicalNote'
+
+    PatientClinicalNoteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+        consultation_id:
+          type: string
+          format: uuid
+          nullable: true
 
     Encounter:
       type: object

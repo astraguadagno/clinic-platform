@@ -35,6 +35,11 @@ type directoryRepository interface {
 	ListPatientEncounters(ctx context.Context, patientID, professionalID string) ([]directory.Encounter, error)
 	GetClinicalHistory(ctx context.Context, patientID string) (directory.ClinicalHistory, error)
 	UpdateClinicalHistory(ctx context.Context, params directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error)
+	CreatePatientClinicalNote(ctx context.Context, params directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error)
+	ListPatientClinicalNotes(ctx context.Context, patientID string) ([]directory.PatientClinicalNote, error)
+	GetPatientClinicalNote(ctx context.Context, patientID, noteID string) (directory.PatientClinicalNote, error)
+	UpdatePatientClinicalNote(ctx context.Context, noteID string, params directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error)
+	DeletePatientClinicalNote(ctx context.Context, patientID, noteID string) error
 	CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error)
 	ListProfessionals(ctx context.Context) ([]directory.Professional, error)
 	GetProfessionalByID(ctx context.Context, id string) (directory.Professional, error)
@@ -87,6 +92,12 @@ type loginResponse struct {
 type createEncounterRequest struct {
 	OccurredAt string `json:"occurred_at"`
 	Note       string `json:"note"`
+}
+
+type patientClinicalNoteRequest struct {
+	Content         string  `json:"content"`
+	ConsultationID  *string `json:"consultation_id"`
+	SetConsultation bool    `json:"-"`
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -207,6 +218,14 @@ func (s *Server) patientByID(w http.ResponseWriter, r *http.Request) {
 		s.patientClinicalHistory(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[1] == "clinical-notes" {
+		s.patientClinicalNotes(w, r, parts[0])
+		return
+	}
+	if len(parts) == 3 && parts[1] == "clinical-notes" {
+		s.patientClinicalNoteByID(w, r, parts[0], parts[2])
+		return
+	}
 
 	http.NotFound(w, r)
 }
@@ -249,6 +268,30 @@ func (s *Server) patientClinicalHistory(w http.ResponseWriter, r *http.Request, 
 		s.updateClinicalHistory(w, r, patientID)
 	default:
 		writeMethodNotAllowed(w, http.MethodGet, http.MethodPatch)
+	}
+}
+
+func (s *Server) patientClinicalNotes(w http.ResponseWriter, r *http.Request, patientID string) {
+	switch r.Method {
+	case http.MethodGet:
+		s.listPatientClinicalNotes(w, r, patientID)
+	case http.MethodPost:
+		s.createPatientClinicalNote(w, r, patientID)
+	default:
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (s *Server) patientClinicalNoteByID(w http.ResponseWriter, r *http.Request, patientID, noteID string) {
+	switch r.Method {
+	case http.MethodGet:
+		s.getPatientClinicalNote(w, r, patientID, noteID)
+	case http.MethodPatch:
+		s.updatePatientClinicalNote(w, r, patientID, noteID)
+	case http.MethodDelete:
+		s.deletePatientClinicalNote(w, r, patientID, noteID)
+	default:
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodPatch, http.MethodDelete)
 	}
 }
 
@@ -494,6 +537,187 @@ func (s *Server) updateClinicalHistory(w http.ResponseWriter, r *http.Request, p
 	}
 
 	writeJSON(w, http.StatusOK, history)
+}
+
+func (s *Server) listPatientClinicalNotes(w http.ResponseWriter, r *http.Request, patientID string) {
+	if _, err := s.currentDoctorUser(r); errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	} else if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, authorizationErrorMessage(err))
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	notes, err := s.repo.ListPatientClinicalNotes(r.Context(), patientID)
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list clinical notes")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": notes})
+}
+
+func (s *Server) createPatientClinicalNote(w http.ResponseWriter, r *http.Request, patientID string) {
+	user, err := s.currentDoctorUser(r)
+	if errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	} else if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, authorizationErrorMessage(err))
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	request, err := decodePatientClinicalNoteRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	note, err := s.repo.CreatePatientClinicalNote(r.Context(), directory.PatientClinicalNoteParams{
+		PatientID:       patientID,
+		ProfessionalID:  *user.ProfessionalID,
+		Content:         request.Content,
+		ConsultationID:  request.ConsultationID,
+		SetConsultation: request.SetConsultation,
+	})
+	if errors.Is(err, directory.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "failed to create clinical note")
+		return
+	}
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "patient not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create clinical note")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, note)
+}
+
+func (s *Server) getPatientClinicalNote(w http.ResponseWriter, r *http.Request, patientID, noteID string) {
+	if _, err := s.currentDoctorUser(r); errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	} else if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, authorizationErrorMessage(err))
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	note, err := s.repo.GetPatientClinicalNote(r.Context(), patientID, noteID)
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "clinical note not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load clinical note")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, note)
+}
+
+func (s *Server) updatePatientClinicalNote(w http.ResponseWriter, r *http.Request, patientID, noteID string) {
+	user, err := s.currentDoctorUser(r)
+	if errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	} else if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, authorizationErrorMessage(err))
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	request, err := decodePatientClinicalNoteRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	note, err := s.repo.UpdatePatientClinicalNote(r.Context(), noteID, directory.PatientClinicalNoteParams{
+		PatientID:       patientID,
+		ProfessionalID:  *user.ProfessionalID,
+		Content:         request.Content,
+		ConsultationID:  request.ConsultationID,
+		SetConsultation: request.SetConsultation,
+	})
+	if errors.Is(err, directory.ErrValidation) {
+		writeError(w, http.StatusBadRequest, "failed to update clinical note")
+		return
+	}
+	if errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "clinical note not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update clinical note")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, note)
+}
+
+func (s *Server) deletePatientClinicalNote(w http.ResponseWriter, r *http.Request, patientID, noteID string) {
+	if _, err := s.currentDoctorUser(r); errors.Is(err, directory.ErrUnauthorized) {
+		writeUnauthorized(w)
+		return
+	} else if errors.Is(err, directory.ErrForbidden) {
+		writeForbidden(w, authorizationErrorMessage(err))
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current user")
+		return
+	}
+
+	if err := s.repo.DeletePatientClinicalNote(r.Context(), patientID, noteID); errors.Is(err, directory.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "clinical note not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete clinical note")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodePatientClinicalNoteRequest(r *http.Request) (patientClinicalNoteRequest, error) {
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return patientClinicalNoteRequest{}, err
+	}
+
+	var request patientClinicalNoteRequest
+	if value, ok := raw["content"]; ok {
+		if err := json.Unmarshal(value, &request.Content); err != nil {
+			return patientClinicalNoteRequest{}, err
+		}
+	}
+	if value, ok := raw["consultation_id"]; ok {
+		request.SetConsultation = true
+		if string(value) != "null" {
+			if err := json.Unmarshal(value, &request.ConsultationID); err != nil {
+				return patientClinicalNoteRequest{}, err
+			}
+		}
+	}
+
+	return request, nil
 }
 
 func (s *Server) createProfessional(w http.ResponseWriter, r *http.Request) {

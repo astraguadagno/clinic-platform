@@ -127,6 +127,127 @@ func TestRepositoryIntegrationClinicalHistoryMissingPatientReturnsNotFound(t *te
 	}
 }
 
+func TestRepositoryIntegrationPatientClinicalNotesLifecycle(t *testing.T) {
+	repo, db := newPostgresIntegrationRepository(t)
+
+	patient := seedClinicalPatient(t, repo, "patient-notes")
+	professional := seedClinicalProfessional(t, repo, "patient-notes")
+	consultationID := "2ba4fc4a-6a4b-4e82-9af8-86a80f7f6f5a"
+
+	standalone, err := repo.CreatePatientClinicalNote(context.Background(), PatientClinicalNoteParams{
+		PatientID:      patient.ID,
+		ProfessionalID: professional.ID,
+		Content:        " Nota autónoma ",
+	})
+	if err != nil {
+		t.Fatalf("create standalone note: %v", err)
+	}
+	if standalone.PatientID != patient.ID {
+		t.Fatalf("standalone patient_id = %q, want %q", standalone.PatientID, patient.ID)
+	}
+	if standalone.Content != "Nota autónoma" {
+		t.Fatalf("standalone content = %q, want Nota autónoma", standalone.Content)
+	}
+	if standalone.ConsultationID != nil {
+		t.Fatalf("standalone consultation_id = %v, want nil", standalone.ConsultationID)
+	}
+
+	linked, err := repo.CreatePatientClinicalNote(context.Background(), PatientClinicalNoteParams{
+		PatientID:       patient.ID,
+		ProfessionalID:  professional.ID,
+		Content:         "Nota vinculada.",
+		ConsultationID:  &consultationID,
+		SetConsultation: true,
+	})
+	if err != nil {
+		t.Fatalf("create linked note: %v", err)
+	}
+	if linked.ConsultationID == nil || *linked.ConsultationID != consultationID {
+		t.Fatalf("linked consultation_id = %v, want %s", linked.ConsultationID, consultationID)
+	}
+
+	notes, err := repo.ListPatientClinicalNotes(context.Background(), patient.ID)
+	if err != nil {
+		t.Fatalf("list patient notes: %v", err)
+	}
+	if len(notes) != 2 {
+		t.Fatalf("notes listed = %d, want 2", len(notes))
+	}
+	if notes[0].ID != linked.ID || notes[1].ID != standalone.ID {
+		t.Fatalf("notes order = [%s %s], want newest linked then standalone", notes[0].ID, notes[1].ID)
+	}
+
+	cleared, err := repo.UpdatePatientClinicalNote(context.Background(), linked.ID, PatientClinicalNoteParams{
+		PatientID:       patient.ID,
+		ProfessionalID:  professional.ID,
+		Content:         "Nota actualizada.",
+		SetConsultation: true,
+	})
+	if err != nil {
+		t.Fatalf("update linked note: %v", err)
+	}
+	if cleared.Content != "Nota actualizada." {
+		t.Fatalf("updated content = %q, want Nota actualizada.", cleared.Content)
+	}
+	if cleared.ConsultationID != nil {
+		t.Fatalf("updated consultation_id = %v, want nil", cleared.ConsultationID)
+	}
+
+	if got := countClinicalHistory(t, db); got != 0 {
+		t.Fatalf("clinical history rows = %d, want 0", got)
+	}
+
+	if err := repo.DeletePatientClinicalNote(context.Background(), patient.ID, linked.ID); err != nil {
+		t.Fatalf("delete linked note: %v", err)
+	}
+	notes, err = repo.ListPatientClinicalNotes(context.Background(), patient.ID)
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	if len(notes) != 1 || notes[0].ID != standalone.ID {
+		t.Fatalf("notes after delete = %+v, want only standalone note %s", notes, standalone.ID)
+	}
+}
+
+func TestRepositoryIntegrationPatientClinicalNotesPreserveEncounterCompatibility(t *testing.T) {
+	repo, _ := newPostgresIntegrationRepository(t)
+
+	patient := seedClinicalPatient(t, repo, "notes-compat")
+	professional := seedClinicalProfessional(t, repo, "notes-compat")
+
+	encounter, err := repo.CreateEncounter(context.Background(), CreateEncounterParams{
+		PatientID:      patient.ID,
+		ProfessionalID: professional.ID,
+		OccurredAt:     time.Date(2026, 4, 7, 14, 30, 0, 0, time.UTC).Format(time.RFC3339),
+		Note:           "Nota inicial de encuentro.",
+	})
+	if err != nil {
+		t.Fatalf("create encounter: %v", err)
+	}
+	_, err = repo.CreatePatientClinicalNote(context.Background(), PatientClinicalNoteParams{
+		PatientID:      patient.ID,
+		ProfessionalID: professional.ID,
+		Content:        "Nota autónoma fuera del encuentro.",
+	})
+	if err != nil {
+		t.Fatalf("create standalone note: %v", err)
+	}
+
+	encounters, err := repo.ListPatientEncounters(context.Background(), patient.ID, professional.ID)
+	if err != nil {
+		t.Fatalf("list patient encounters: %v", err)
+	}
+	if len(encounters) != 1 {
+		t.Fatalf("encounters listed = %d, want 1", len(encounters))
+	}
+	if encounters[0].ID != encounter.ID {
+		t.Fatalf("encounter id = %q, want %q", encounters[0].ID, encounter.ID)
+	}
+	if encounters[0].InitialNote.Kind != "initial" || encounters[0].InitialNote.Content != "Nota inicial de encuentro." {
+		t.Fatalf("initial note = %+v, want original encounter initial note", encounters[0].InitialNote)
+	}
+}
+
 func TestRepositoryIntegrationListPatientEncountersScopesByPatientAndProfessional(t *testing.T) {
 	repo, db := newPostgresIntegrationRepository(t)
 
