@@ -405,6 +405,238 @@ func TestClinicalHistoryReturnsNotFoundForMissingPatient(t *testing.T) {
 	}
 }
 
+func TestListPatientClinicalNotesReturnsOrderedItemsForDoctor(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	consultationID := "2ba4fc4a-6a4b-4e82-9af8-86a80f7f6f5a"
+	now := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		listPatientClinicalNotesFn: func(_ context.Context, gotPatientID string) ([]directory.PatientClinicalNote, error) {
+			if gotPatientID != patientID {
+				t.Fatalf("patientID = %q, want %q", gotPatientID, patientID)
+			}
+			return []directory.PatientClinicalNote{
+				{ID: "note-new", PatientID: patientID, ProfessionalID: professionalID, Content: "Más reciente", ConsultationID: &consultationID, CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute)},
+				{ID: "note-old", PatientID: patientID, ProfessionalID: professionalID, Content: "Anterior", CreatedAt: now, UpdatedAt: now},
+			}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients/"+patientID+"/clinical-notes", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response struct {
+		Items []directory.PatientClinicalNote `json:"items"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Items) != 2 {
+		t.Fatalf("items len = %d, want 2", len(response.Items))
+	}
+	if response.Items[0].ID != "note-new" || response.Items[1].ID != "note-old" {
+		t.Fatalf("note order = [%s %s], want [note-new note-old]", response.Items[0].ID, response.Items[1].ID)
+	}
+	if response.Items[0].ConsultationID == nil || *response.Items[0].ConsultationID != consultationID {
+		t.Fatalf("consultation_id = %v, want %s", response.Items[0].ConsultationID, consultationID)
+	}
+	if response.Items[1].ConsultationID != nil {
+		t.Fatalf("standalone consultation_id = %v, want nil", response.Items[1].ConsultationID)
+	}
+}
+
+func TestCreatePatientClinicalNoteReturnsCreatedStandaloneNote(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	now := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		createPatientClinicalNoteFn: func(_ context.Context, params directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error) {
+			if params.PatientID != patientID {
+				t.Fatalf("patientID = %q, want %q", params.PatientID, patientID)
+			}
+			if params.ProfessionalID != professionalID {
+				t.Fatalf("professionalID = %q, want %q", params.ProfessionalID, professionalID)
+			}
+			if params.Content != " Nota autónoma " {
+				t.Fatalf("content = %q, want raw payload", params.Content)
+			}
+			if params.ConsultationID != nil {
+				t.Fatalf("consultationID = %v, want nil", params.ConsultationID)
+			}
+			return directory.PatientClinicalNote{ID: "note-1", PatientID: patientID, ProfessionalID: professionalID, Content: "Nota autónoma", CreatedAt: now, UpdatedAt: now}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/patients/"+patientID+"/clinical-notes", bytes.NewBufferString(`{"content":" Nota autónoma "}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+
+	var note directory.PatientClinicalNote
+	if err := json.NewDecoder(recorder.Body).Decode(&note); err != nil {
+		t.Fatalf("decode note: %v", err)
+	}
+	if note.ID != "note-1" || note.Content != "Nota autónoma" {
+		t.Fatalf("note = %+v, want created standalone note", note)
+	}
+}
+
+func TestPatchPatientClinicalNoteClearsConsultationReference(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	noteID := "85daae39-e679-4a14-b1e9-fcfbd2912f60"
+	now := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		updatePatientClinicalNoteFn: func(_ context.Context, gotNoteID string, params directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error) {
+			if gotNoteID != noteID {
+				t.Fatalf("noteID = %q, want %q", gotNoteID, noteID)
+			}
+			if params.PatientID != patientID || params.ProfessionalID != professionalID {
+				t.Fatalf("params ownership = %+v, want patient/professional ids", params)
+			}
+			if params.Content != "Nota actualizada." {
+				t.Fatalf("content = %q, want Nota actualizada.", params.Content)
+			}
+			if !params.SetConsultation || params.ConsultationID != nil {
+				t.Fatalf("consultation clear params = set %v value %v, want explicit nil", params.SetConsultation, params.ConsultationID)
+			}
+			return directory.PatientClinicalNote{ID: noteID, PatientID: patientID, ProfessionalID: professionalID, Content: "Nota actualizada.", CreatedAt: now, UpdatedAt: now}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/patients/"+patientID+"/clinical-notes/"+noteID, bytes.NewBufferString(`{"content":"Nota actualizada.","consultation_id":null}`))
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var note directory.PatientClinicalNote
+	if err := json.NewDecoder(recorder.Body).Decode(&note); err != nil {
+		t.Fatalf("decode note: %v", err)
+	}
+	if note.ConsultationID != nil || note.Content != "Nota actualizada." {
+		t.Fatalf("note = %+v, want updated note without consultation", note)
+	}
+}
+
+func TestDeletePatientClinicalNoteReturnsNoContent(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	noteID := "85daae39-e679-4a14-b1e9-fcfbd2912f60"
+
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+		},
+		deletePatientClinicalNoteFn: func(_ context.Context, gotPatientID, gotNoteID string) error {
+			if gotPatientID != patientID || gotNoteID != noteID {
+				t.Fatalf("delete args = patient %q note %q, want patient %q note %q", gotPatientID, gotNoteID, patientID, noteID)
+			}
+			return nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/patients/"+patientID+"/clinical-notes/"+noteID, nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
+	}
+}
+
+func TestPatientClinicalNotesReturnForbiddenForSecretary(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	repo := &stubDirectoryRepository{
+		getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+			return directory.User{ID: "user-1", Email: "secretary@clinic.local", Role: "secretary", ProfessionalID: &professionalID, Active: true}, nil
+		},
+	}
+
+	server := NewServer(testConfig(), repo)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/patients/0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca/clinical-notes", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+
+	server.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestPatientClinicalNotesMapValidationAndMissingPatient(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+
+	tests := []struct {
+		name       string
+		repoError  error
+		wantStatus int
+	}{
+		{name: "validation", repoError: directory.ErrValidation, wantStatus: http.StatusBadRequest},
+		{name: "missing patient", repoError: directory.ErrNotFound, wantStatus: http.StatusNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &stubDirectoryRepository{
+				getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+					return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+				},
+				createPatientClinicalNoteFn: func(context.Context, directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error) {
+					return directory.PatientClinicalNote{}, tt.repoError
+				},
+			}
+
+			server := NewServer(testConfig(), repo)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/patients/"+patientID+"/clinical-notes", bytes.NewBufferString(`{"content":"Nota"}`))
+			request.Header.Set("Authorization", "Bearer test-token")
+
+			server.ServeHTTP(recorder, request)
+
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
 func TestLoginReturnsAccessToken(t *testing.T) {
 	repo := &stubDirectoryRepository{
 		authenticateUserFn: func(_ context.Context, email, password string) (directory.User, error) {
@@ -797,20 +1029,25 @@ func TestInternalPatientByDocumentReturnsPatientWithoutAuth(t *testing.T) {
 }
 
 type stubDirectoryRepository struct {
-	createPatientFn         func(context.Context, directory.CreatePatientParams) (directory.Patient, error)
-	listPatientsFn          func(context.Context) ([]directory.Patient, error)
-	getPatientByIDFn        func(context.Context, string) (directory.Patient, error)
-	getPatientByDocumentFn  func(context.Context, string) (directory.Patient, error)
-	createEncounterFn       func(context.Context, directory.CreateEncounterParams) (directory.Encounter, error)
-	listPatientEncountersFn func(context.Context, string, string) ([]directory.Encounter, error)
-	getClinicalHistoryFn    func(context.Context, string) (directory.ClinicalHistory, error)
-	updateClinicalHistoryFn func(context.Context, directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error)
-	createProfessionalFn    func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error)
-	listProfessionalsFn     func(context.Context) ([]directory.Professional, error)
-	getProfessionalByIDFn   func(context.Context, string) (directory.Professional, error)
-	authenticateUserFn      func(context.Context, string, string) (directory.User, error)
-	createSessionFn         func(context.Context, string, string, time.Time) error
-	getUserBySessionTokenFn func(context.Context, string, time.Time) (directory.User, error)
+	createPatientFn             func(context.Context, directory.CreatePatientParams) (directory.Patient, error)
+	listPatientsFn              func(context.Context) ([]directory.Patient, error)
+	getPatientByIDFn            func(context.Context, string) (directory.Patient, error)
+	getPatientByDocumentFn      func(context.Context, string) (directory.Patient, error)
+	createEncounterFn           func(context.Context, directory.CreateEncounterParams) (directory.Encounter, error)
+	listPatientEncountersFn     func(context.Context, string, string) ([]directory.Encounter, error)
+	getClinicalHistoryFn        func(context.Context, string) (directory.ClinicalHistory, error)
+	updateClinicalHistoryFn     func(context.Context, directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error)
+	createPatientClinicalNoteFn func(context.Context, directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error)
+	listPatientClinicalNotesFn  func(context.Context, string) ([]directory.PatientClinicalNote, error)
+	getPatientClinicalNoteFn    func(context.Context, string, string) (directory.PatientClinicalNote, error)
+	updatePatientClinicalNoteFn func(context.Context, string, directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error)
+	deletePatientClinicalNoteFn func(context.Context, string, string) error
+	createProfessionalFn        func(context.Context, directory.CreateProfessionalParams) (directory.Professional, error)
+	listProfessionalsFn         func(context.Context) ([]directory.Professional, error)
+	getProfessionalByIDFn       func(context.Context, string) (directory.Professional, error)
+	authenticateUserFn          func(context.Context, string, string) (directory.User, error)
+	createSessionFn             func(context.Context, string, string, time.Time) error
+	getUserBySessionTokenFn     func(context.Context, string, time.Time) (directory.User, error)
 }
 
 func (s *stubDirectoryRepository) CreatePatient(ctx context.Context, params directory.CreatePatientParams) (directory.Patient, error) {
@@ -867,6 +1104,41 @@ func (s *stubDirectoryRepository) UpdateClinicalHistory(ctx context.Context, par
 		return directory.ClinicalHistory{}, errors.New("unexpected UpdateClinicalHistory call")
 	}
 	return s.updateClinicalHistoryFn(ctx, params)
+}
+
+func (s *stubDirectoryRepository) CreatePatientClinicalNote(ctx context.Context, params directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error) {
+	if s.createPatientClinicalNoteFn == nil {
+		return directory.PatientClinicalNote{}, errors.New("unexpected CreatePatientClinicalNote call")
+	}
+	return s.createPatientClinicalNoteFn(ctx, params)
+}
+
+func (s *stubDirectoryRepository) ListPatientClinicalNotes(ctx context.Context, patientID string) ([]directory.PatientClinicalNote, error) {
+	if s.listPatientClinicalNotesFn == nil {
+		return nil, errors.New("unexpected ListPatientClinicalNotes call")
+	}
+	return s.listPatientClinicalNotesFn(ctx, patientID)
+}
+
+func (s *stubDirectoryRepository) GetPatientClinicalNote(ctx context.Context, patientID, noteID string) (directory.PatientClinicalNote, error) {
+	if s.getPatientClinicalNoteFn == nil {
+		return directory.PatientClinicalNote{}, errors.New("unexpected GetPatientClinicalNote call")
+	}
+	return s.getPatientClinicalNoteFn(ctx, patientID, noteID)
+}
+
+func (s *stubDirectoryRepository) UpdatePatientClinicalNote(ctx context.Context, noteID string, params directory.PatientClinicalNoteParams) (directory.PatientClinicalNote, error) {
+	if s.updatePatientClinicalNoteFn == nil {
+		return directory.PatientClinicalNote{}, errors.New("unexpected UpdatePatientClinicalNote call")
+	}
+	return s.updatePatientClinicalNoteFn(ctx, noteID, params)
+}
+
+func (s *stubDirectoryRepository) DeletePatientClinicalNote(ctx context.Context, patientID, noteID string) error {
+	if s.deletePatientClinicalNoteFn == nil {
+		return errors.New("unexpected DeletePatientClinicalNote call")
+	}
+	return s.deletePatientClinicalNoteFn(ctx, patientID, noteID)
 }
 
 func (s *stubDirectoryRepository) CreateProfessional(ctx context.Context, params directory.CreateProfessionalParams) (directory.Professional, error) {

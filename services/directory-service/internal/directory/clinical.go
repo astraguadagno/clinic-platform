@@ -43,6 +43,24 @@ type ClinicalNote struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type PatientClinicalNote struct {
+	ID             string    `json:"id"`
+	PatientID      string    `json:"patient_id"`
+	ProfessionalID string    `json:"professional_id"`
+	Content        string    `json:"content"`
+	ConsultationID *string   `json:"consultation_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type PatientClinicalNoteParams struct {
+	PatientID       string  `json:"-"`
+	ProfessionalID  string  `json:"-"`
+	Content         string  `json:"content"`
+	ConsultationID  *string `json:"consultation_id,omitempty"`
+	SetConsultation bool    `json:"-"`
+}
+
 type ClinicalHistory struct {
 	ID                  string    `json:"id"`
 	PatientID           string    `json:"patient_id"`
@@ -170,6 +188,130 @@ func (r *Repository) UpdateClinicalHistory(ctx context.Context, params UpdateCli
 		normalized.SetHabits, normalized.Habits,
 		normalized.SetGeneralObservations, normalized.GeneralObservations,
 	))
+}
+
+func (r *Repository) CreatePatientClinicalNote(ctx context.Context, params PatientClinicalNoteParams) (PatientClinicalNote, error) {
+	normalized, err := validatePatientClinicalNoteParams(params)
+	if err != nil {
+		return PatientClinicalNote{}, err
+	}
+	if err := r.ensureClinicalPatientExists(ctx, normalized.PatientID); err != nil {
+		return PatientClinicalNote{}, err
+	}
+
+	return scanPatientClinicalNote(r.db.QueryRowContext(ctx, `
+		INSERT INTO clinical_notes (patient_id, professional_id, kind, content, consultation_id)
+		VALUES ($1, $2, 'standalone', $3, $4)
+		RETURNING id, patient_id, professional_id, content, consultation_id, created_at, updated_at
+	`, normalized.PatientID, normalized.ProfessionalID, normalized.Content, normalized.ConsultationID))
+}
+
+func (r *Repository) ListPatientClinicalNotes(ctx context.Context, patientID string) ([]PatientClinicalNote, error) {
+	normalizedPatientID, err := validateClinicalHistoryPatientID(patientID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.ensureClinicalPatientExists(ctx, normalizedPatientID); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, patient_id, professional_id, content, consultation_id, created_at, updated_at
+		FROM clinical_notes
+		WHERE patient_id = $1 AND kind = 'standalone'
+		ORDER BY created_at DESC, id DESC
+	`, normalizedPatientID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	notes := make([]PatientClinicalNote, 0)
+	for rows.Next() {
+		note, err := scanPatientClinicalNote(rows)
+		if err != nil {
+			return nil, err
+		}
+		notes = append(notes, note)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return notes, nil
+}
+
+func (r *Repository) GetPatientClinicalNote(ctx context.Context, patientID, noteID string) (PatientClinicalNote, error) {
+	normalizedPatientID, normalizedNoteID, err := validatePatientClinicalNoteIdentity(patientID, noteID)
+	if err != nil {
+		return PatientClinicalNote{}, err
+	}
+
+	note, err := scanPatientClinicalNote(r.db.QueryRowContext(ctx, `
+		SELECT id, patient_id, professional_id, content, consultation_id, created_at, updated_at
+		FROM clinical_notes
+		WHERE id = $1 AND patient_id = $2 AND kind = 'standalone'
+	`, normalizedNoteID, normalizedPatientID))
+	if isNoRows(err) {
+		return PatientClinicalNote{}, ErrNotFound
+	}
+	if err != nil {
+		return PatientClinicalNote{}, err
+	}
+
+	return note, nil
+}
+
+func (r *Repository) UpdatePatientClinicalNote(ctx context.Context, noteID string, params PatientClinicalNoteParams) (PatientClinicalNote, error) {
+	normalizedNoteID, err := validatePatientClinicalNoteID(noteID)
+	if err != nil {
+		return PatientClinicalNote{}, err
+	}
+	normalized, err := validatePatientClinicalNoteParams(params)
+	if err != nil {
+		return PatientClinicalNote{}, err
+	}
+
+	note, err := scanPatientClinicalNote(r.db.QueryRowContext(ctx, `
+		UPDATE clinical_notes
+		SET content = $3,
+			consultation_id = CASE WHEN $4 THEN $5::uuid ELSE consultation_id END,
+			updated_at = NOW()
+		WHERE id = $1 AND patient_id = $2 AND kind = 'standalone'
+		RETURNING id, patient_id, professional_id, content, consultation_id, created_at, updated_at
+	`, normalizedNoteID, normalized.PatientID, normalized.Content, normalized.SetConsultation, normalized.ConsultationID))
+	if isNoRows(err) {
+		return PatientClinicalNote{}, ErrNotFound
+	}
+	if err != nil {
+		return PatientClinicalNote{}, err
+	}
+
+	return note, nil
+}
+
+func (r *Repository) DeletePatientClinicalNote(ctx context.Context, patientID, noteID string) error {
+	normalizedPatientID, normalizedNoteID, err := validatePatientClinicalNoteIdentity(patientID, noteID)
+	if err != nil {
+		return err
+	}
+
+	result, err := r.db.ExecContext(ctx, `
+		DELETE FROM clinical_notes
+		WHERE id = $1 AND patient_id = $2 AND kind = 'standalone'
+	`, normalizedNoteID, normalizedPatientID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 func (r *Repository) CreateEncounter(ctx context.Context, params CreateEncounterParams) (Encounter, error) {
@@ -373,6 +515,68 @@ func validateUpdateClinicalHistoryParams(params UpdateClinicalHistoryParams) (Up
 	return normalized, nil
 }
 
+func validatePatientClinicalNoteParams(params PatientClinicalNoteParams) (PatientClinicalNoteParams, error) {
+	normalizedPatientID, normalizedProfessionalID, err := validateEncounterOwnership(params.PatientID, params.ProfessionalID)
+	if err != nil {
+		return PatientClinicalNoteParams{}, err
+	}
+
+	normalized := PatientClinicalNoteParams{
+		PatientID:       normalizedPatientID,
+		ProfessionalID:  normalizedProfessionalID,
+		Content:         strings.TrimSpace(params.Content),
+		SetConsultation: params.SetConsultation || params.ConsultationID != nil,
+	}
+	if normalized.Content == "" {
+		return PatientClinicalNoteParams{}, ErrValidation
+	}
+
+	consultationID, err := normalizeOptionalUUID(params.ConsultationID)
+	if err != nil {
+		return PatientClinicalNoteParams{}, err
+	}
+	normalized.ConsultationID = consultationID
+
+	return normalized, nil
+}
+
+func validatePatientClinicalNoteIdentity(patientID, noteID string) (string, string, error) {
+	normalizedPatientID, err := validateClinicalHistoryPatientID(patientID)
+	if err != nil {
+		return "", "", err
+	}
+	normalizedNoteID, err := validatePatientClinicalNoteID(noteID)
+	if err != nil {
+		return "", "", err
+	}
+
+	return normalizedPatientID, normalizedNoteID, nil
+}
+
+func validatePatientClinicalNoteID(noteID string) (string, error) {
+	normalizedNoteID := strings.TrimSpace(noteID)
+	if _, err := uuid.Parse(normalizedNoteID); err != nil {
+		return "", ErrNotFound
+	}
+
+	return normalizedNoteID, nil
+}
+
+func normalizeOptionalUUID(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	normalized := strings.TrimSpace(*value)
+	if normalized == "" {
+		return nil, nil
+	}
+	if _, err := uuid.Parse(normalized); err != nil {
+		return nil, ErrValidation
+	}
+
+	return &normalized, nil
+}
+
 func validateClinicalHistoryPatientID(patientID string) (string, error) {
 	normalizedPatientID := strings.TrimSpace(patientID)
 	if _, err := uuid.Parse(normalizedPatientID); err != nil {
@@ -380,6 +584,20 @@ func validateClinicalHistoryPatientID(patientID string) (string, error) {
 	}
 
 	return normalizedPatientID, nil
+}
+
+func (r *Repository) ensureClinicalPatientExists(ctx context.Context, patientID string) error {
+	var patientExists bool
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM patients WHERE id = $1)
+	`, patientID).Scan(&patientExists); err != nil {
+		return err
+	}
+	if !patientExists {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 func validateClinicalMeasurement(value *float64, max float64) error {
@@ -487,6 +705,28 @@ func scanClinicalNote(scanner clinicalNoteScanner) (ClinicalNote, error) {
 	if err != nil {
 		return ClinicalNote{}, err
 	}
+
+	return note, nil
+}
+
+func scanPatientClinicalNote(scanner clinicalNoteScanner) (PatientClinicalNote, error) {
+	var note PatientClinicalNote
+	var consultationID sql.NullString
+
+	err := scanner.Scan(
+		&note.ID,
+		&note.PatientID,
+		&note.ProfessionalID,
+		&note.Content,
+		&consultationID,
+		&note.CreatedAt,
+		&note.UpdatedAt,
+	)
+	if err != nil {
+		return PatientClinicalNote{}, err
+	}
+
+	note.ConsultationID = nullStringPtr(consultationID)
 
 	return note, nil
 }

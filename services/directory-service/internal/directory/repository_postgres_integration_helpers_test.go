@@ -203,6 +203,12 @@ func countClinicalNotes(t *testing.T, db *sql.DB) int {
 	return countTableRows(t, db, "clinical_notes")
 }
 
+func countClinicalHistory(t *testing.T, db *sql.DB) int {
+	t.Helper()
+
+	return countTableRows(t, db, "clinical_history")
+}
+
 func countTableRows(t *testing.T, db *sql.DB, table string) int {
 	t.Helper()
 

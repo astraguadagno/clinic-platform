@@ -154,6 +154,120 @@ func TestValidateUpdateClinicalHistoryParams(t *testing.T) {
 	}
 }
 
+func TestValidatePatientClinicalNoteParams(t *testing.T) {
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	consultationID := "2ba4fc4a-6a4b-4e82-9af8-86a80f7f6f5a"
+	blankConsultationID := "   "
+
+	tests := []struct {
+		name    string
+		params  PatientClinicalNoteParams
+		want    PatientClinicalNoteParams
+		wantErr error
+	}{
+		{
+			name: "standalone note trims content without consultation reference",
+			params: PatientClinicalNoteParams{
+				PatientID:      " " + patientID + " ",
+				ProfessionalID: " " + professionalID + " ",
+				Content:        "  Evolución estable  ",
+			},
+			want: PatientClinicalNoteParams{
+				PatientID:      patientID,
+				ProfessionalID: professionalID,
+				Content:        "Evolución estable",
+			},
+		},
+		{
+			name: "consultation reference is trimmed and preserved when valid UUID",
+			params: PatientClinicalNoteParams{
+				PatientID:       patientID,
+				ProfessionalID:  professionalID,
+				Content:         "Control vinculado.",
+				ConsultationID:  stringPtr(" " + consultationID + " "),
+				SetConsultation: true,
+			},
+			want: PatientClinicalNoteParams{
+				PatientID:       patientID,
+				ProfessionalID:  professionalID,
+				Content:         "Control vinculado.",
+				ConsultationID:  &consultationID,
+				SetConsultation: true,
+			},
+		},
+		{
+			name: "blank consultation reference normalizes to nil",
+			params: PatientClinicalNoteParams{
+				PatientID:       patientID,
+				ProfessionalID:  professionalID,
+				Content:         "Control sin referencia.",
+				ConsultationID:  &blankConsultationID,
+				SetConsultation: true,
+			},
+			want: PatientClinicalNoteParams{
+				PatientID:       patientID,
+				ProfessionalID:  professionalID,
+				Content:         "Control sin referencia.",
+				ConsultationID:  nil,
+				SetConsultation: true,
+			},
+		},
+		{
+			name: "malformed consultation reference is rejected",
+			params: PatientClinicalNoteParams{
+				PatientID:      patientID,
+				ProfessionalID: professionalID,
+				Content:        "Control vinculado.",
+				ConsultationID: stringPtr("not-a-uuid"),
+			},
+			wantErr: ErrValidation,
+		},
+		{
+			name: "blank content is rejected",
+			params: PatientClinicalNoteParams{
+				PatientID:      patientID,
+				ProfessionalID: professionalID,
+				Content:        "   ",
+			},
+			wantErr: ErrValidation,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validatePatientClinicalNoteParams(tt.params)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+
+			assertPatientClinicalNoteParams(t, got, tt.want)
+		})
+	}
+}
+
+func assertPatientClinicalNoteParams(t *testing.T, got, want PatientClinicalNoteParams) {
+	t.Helper()
+
+	if got.PatientID != want.PatientID {
+		t.Fatalf("patientID = %q, want %q", got.PatientID, want.PatientID)
+	}
+	if got.ProfessionalID != want.ProfessionalID {
+		t.Fatalf("professionalID = %q, want %q", got.ProfessionalID, want.ProfessionalID)
+	}
+	if got.Content != want.Content {
+		t.Fatalf("content = %q, want %q", got.Content, want.Content)
+	}
+	if got.SetConsultation != want.SetConsultation {
+		t.Fatalf("set consultation = %v, want %v", got.SetConsultation, want.SetConsultation)
+	}
+	assertStringPtr(t, "consultation", got.ConsultationID, want.ConsultationID)
+}
+
 func assertUpdateClinicalHistoryParams(t *testing.T, got, want UpdateClinicalHistoryParams) {
 	t.Helper()
 
