@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -345,6 +346,18 @@ func TestCreateTemplateCreatesInitialTemplateVersion(t *testing.T) {
 	if template.Versions[0].CreatedBy == nil || *template.Versions[0].CreatedBy != createdBy {
 		t.Fatalf("created_by = %v, want %q", template.Versions[0].CreatedBy, createdBy)
 	}
+}
+
+func TestCreateTemplateStatementReplacesSameEffectiveFromVersion(t *testing.T) {
+	t.Parallel()
+
+	statement := createTemplateStatement()
+	assertSQLContains(t, statement, "ON CONFLICT (template_id, effective_from)")
+	assertSQLContains(t, statement, "DO UPDATE SET")
+	assertSQLContains(t, statement, "recurrence = EXCLUDED.recurrence")
+	assertSQLContains(t, statement, "created_by = EXCLUDED.created_by")
+	assertSQLContains(t, statement, "reason = EXCLUDED.reason")
+	assertSQLContains(t, statement, "RETURNING id, template_id, version_number, effective_from, recurrence, created_at, created_by, reason")
 }
 
 func TestGetTemplateReturnsNotFoundWhenTemplateMissing(t *testing.T) {
@@ -724,6 +737,14 @@ func nullableStringValue(value *string) any {
 	}
 
 	return *value
+}
+
+func assertSQLContains(t *testing.T, statement string, expected string) {
+	t.Helper()
+
+	if !strings.Contains(statement, expected) {
+		t.Fatalf("SQL statement missing %q in:\n%s", expected, statement)
+	}
 }
 
 type scriptedDriver struct {

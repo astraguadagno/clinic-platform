@@ -2,6 +2,7 @@ package appointments
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -114,5 +115,40 @@ func TestRepositoryIntegrationStandaloneConsultationPersistsScheduleRange(t *tes
 	}
 	if !persisted.ScheduledStart.Equal(scheduledStart) || !persisted.ScheduledEnd.Equal(scheduledEnd) {
 		t.Fatalf("persisted schedule = [%s %s], want [%s %s]", persisted.ScheduledStart, persisted.ScheduledEnd, scheduledStart, scheduledEnd)
+	}
+}
+
+func TestRepositoryIntegrationStandaloneConsultationRejectsOverlappingActiveRange(t *testing.T) {
+	repo, _ := newPostgresConsultationIntegrationRepository(t)
+
+	ctx := context.Background()
+	professionalID := "550e8400-e29b-41d4-a716-446655440321"
+	firstPatientID := "550e8400-e29b-41d4-a716-446655440322"
+	secondPatientID := "550e8400-e29b-41d4-a716-446655440323"
+	scheduledStart := time.Date(2026, time.April, 16, 11, 0, 0, 0, time.UTC)
+	scheduledEnd := time.Date(2026, time.April, 16, 11, 20, 0, 0, time.UTC)
+
+	_, err := repo.CreateConsultation(ctx, CreateConsultationParams{
+		ProfessionalID: professionalID,
+		PatientID:      firstPatientID,
+		Source:         ConsultationSourceDoctor,
+		ScheduledStart: &scheduledStart,
+		ScheduledEnd:   &scheduledEnd,
+	})
+	if err != nil {
+		t.Fatalf("create first standalone consultation: %v", err)
+	}
+
+	overlapStart := scheduledStart.Add(10 * time.Minute)
+	overlapEnd := scheduledEnd.Add(10 * time.Minute)
+	_, err = repo.CreateConsultation(ctx, CreateConsultationParams{
+		ProfessionalID: professionalID,
+		PatientID:      secondPatientID,
+		Source:         ConsultationSourceDoctor,
+		ScheduledStart: &overlapStart,
+		ScheduledEnd:   &overlapEnd,
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("overlapping standalone consultation err = %v, want %v", err, ErrConflict)
 	}
 }

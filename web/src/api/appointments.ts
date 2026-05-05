@@ -2,8 +2,11 @@ import { request } from './http';
 import type {
   Appointment,
   BulkCreateSlotsPayload,
+  Consultation,
   CreateScheduleTemplateVersionPayload,
   CreateAppointmentPayload,
+  CreateConsultationPayload,
+  UpdateConsultationStatusPayload,
   GetScheduleTemplateFilters,
   ListResponse,
   ListScheduleTemplateVersionFilters,
@@ -71,6 +74,22 @@ export function createSlotsBulk(payload: BulkCreateSlotsPayload) {
 export function createAppointment(payload: CreateAppointmentPayload) {
 	return request<Appointment>(APPOINTMENTS_API_BASE, '/appointments', {
 		method: 'POST',
+		body: payload,
+		auth: true,
+	});
+}
+
+export function createConsultation(payload: CreateConsultationPayload) {
+	return request<Consultation>(APPOINTMENTS_API_BASE, '/consultations', {
+		method: 'POST',
+		body: payload,
+		auth: true,
+	});
+}
+
+export function updateConsultationStatus(payload: UpdateConsultationStatusPayload) {
+	return request<Consultation>(APPOINTMENTS_API_BASE, '/consultations', {
+		method: 'PATCH',
 		body: payload,
 		auth: true,
 	});

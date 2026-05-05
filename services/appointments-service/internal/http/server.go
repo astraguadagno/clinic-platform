@@ -422,10 +422,6 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid schedule request")
 		return
 	}
-	if errors.Is(err, appointments.ErrConflict) {
-		writeError(w, http.StatusConflict, "schedule version already exists for effective date")
-		return
-	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create schedule")
 		return

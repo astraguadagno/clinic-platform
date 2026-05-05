@@ -172,6 +172,74 @@ func TestRepositoryIntegrationCreateTemplatePersistsTemplateAndVersions(t *testi
 	}
 }
 
+func TestRepositoryIntegrationCreateTemplateReplacesSameEffectiveFromVersion(t *testing.T) {
+	repo, db := newPostgresIntegrationRepository(t)
+
+	ctx := context.Background()
+	professionalID := "550e8400-e29b-41d4-a716-446655440122"
+	createdBy := "550e8400-e29b-41d4-a716-446655440123"
+	initialReason := "initial weekly template"
+	correctionReason := "corrected monday hours"
+	initialRecurrence := json.RawMessage(`{"monday":{"start_time":"09:00","end_time":"12:00","slot_duration_minutes":30}}`)
+	correctedRecurrence := json.RawMessage(`{"monday":{"start_time":"10:00","end_time":"13:00","slot_duration_minutes":30}}`)
+
+	created, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+		ProfessionalID: professionalID,
+		EffectiveFrom:  "2026-05-01",
+		Recurrence:     initialRecurrence,
+		Reason:         &initialReason,
+	})
+	if err != nil {
+		t.Fatalf("create initial template: %v", err)
+	}
+
+	replaced, err := repo.CreateTemplate(ctx, CreateTemplateParams{
+		ProfessionalID: professionalID,
+		EffectiveFrom:  "2026-05-01",
+		Recurrence:     correctedRecurrence,
+		CreatedBy:      &createdBy,
+		Reason:         &correctionReason,
+	})
+	if err != nil {
+		t.Fatalf("replace same effective_from template: %v", err)
+	}
+	if replaced.ID != created.ID {
+		t.Fatalf("replaced template id = %q, want %q", replaced.ID, created.ID)
+	}
+	if len(replaced.Versions) != 1 {
+		t.Fatalf("replaced versions len = %d, want 1", len(replaced.Versions))
+	}
+	if replaced.Versions[0].ID != created.Versions[0].ID {
+		t.Fatalf("replaced version id = %q, want existing version %q", replaced.Versions[0].ID, created.Versions[0].ID)
+	}
+	if replaced.Versions[0].VersionNumber != created.Versions[0].VersionNumber {
+		t.Fatalf("replaced version number = %d, want existing version number %d", replaced.Versions[0].VersionNumber, created.Versions[0].VersionNumber)
+	}
+	if string(replaced.Versions[0].Recurrence) != string(correctedRecurrence) {
+		t.Fatalf("replaced recurrence = %s, want %s", replaced.Versions[0].Recurrence, correctedRecurrence)
+	}
+	if replaced.Versions[0].CreatedBy == nil || *replaced.Versions[0].CreatedBy != createdBy {
+		t.Fatalf("replaced created_by = %v, want %q", replaced.Versions[0].CreatedBy, createdBy)
+	}
+	if replaced.Versions[0].Reason == nil || *replaced.Versions[0].Reason != correctionReason {
+		t.Fatalf("replaced reason = %v, want %q", replaced.Versions[0].Reason, correctionReason)
+	}
+
+	versions, err := repo.ListTemplateVersions(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("list template versions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("persisted versions len = %d, want 1", len(versions))
+	}
+	if string(versions[0].Recurrence) != string(correctedRecurrence) {
+		t.Fatalf("persisted recurrence = %s, want %s", versions[0].Recurrence, correctedRecurrence)
+	}
+	if got := countRows(t, db, "schedule_template_versions"); got != 1 {
+		t.Fatalf("template versions persisted = %d, want 1", got)
+	}
+}
+
 func TestRepositoryIntegrationGetActiveTemplateSelectsLatestApplicableVersion(t *testing.T) {
 	repo, _ := newPostgresIntegrationRepository(t)
 

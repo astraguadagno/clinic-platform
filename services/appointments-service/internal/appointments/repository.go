@@ -457,10 +457,18 @@ func (r *Repository) CreateConsultation(ctx context.Context, params CreateConsul
 
 	query := `
 		INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		SELECT NULL, $1, $2, $3, $4, $5, $6
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM consultations
+			WHERE professional_id = $1
+			  AND status IN ('scheduled', 'checked_in')
+			  AND scheduled_start < $5
+			  AND scheduled_end > $4
+		)
 		RETURNING id, slot_id, professional_id, patient_id, status, source, notes, scheduled_start, scheduled_end, check_in_time, reception_notes, created_at, updated_at, cancelled_at
 	`
-	args := []any{validated.slotID, validated.professionalID, validated.patientID, validated.source, validated.scheduledStart, validated.scheduledEnd, validated.notes}
+	args := []any{validated.professionalID, validated.patientID, validated.source, validated.scheduledStart, validated.scheduledEnd, validated.notes}
 	if validated.slotID != nil {
 		query = `
 			INSERT INTO consultations (slot_id, professional_id, patient_id, source, scheduled_start, scheduled_end, notes)
@@ -474,6 +482,9 @@ func (r *Repository) CreateConsultation(ctx context.Context, params CreateConsul
 
 	consultation, err := scanConsultation(r.db.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
+		if validated.slotID == nil {
+			return Consultation{}, ErrConflict
+		}
 		return Consultation{}, ErrNotFound
 	}
 	if err != nil {
@@ -794,7 +805,21 @@ func (r *Repository) CreateTemplate(ctx context.Context, params CreateTemplatePa
 		return ScheduleTemplate{}, err
 	}
 
-	row := r.db.QueryRowContext(ctx, `
+	row := r.db.QueryRowContext(ctx, createTemplateStatement(), professionalID, effectiveFrom, recurrence, createdBy, reason)
+
+	template, err := scanTemplateWithVersion(row)
+	if err != nil {
+		if isConflictViolation(err) {
+			return ScheduleTemplate{}, ErrConflict
+		}
+		return ScheduleTemplate{}, err
+	}
+
+	return template, nil
+}
+
+func createTemplateStatement() string {
+	return `
 		WITH upserted_template AS (
 			INSERT INTO schedule_templates (professional_id)
 			VALUES ($1)
@@ -815,6 +840,11 @@ func (r *Repository) CreateTemplate(ctx context.Context, params CreateTemplatePa
 				$4,
 				$5
 			FROM upserted_template t
+			ON CONFLICT (template_id, effective_from)
+			DO UPDATE SET
+				recurrence = EXCLUDED.recurrence,
+				created_by = EXCLUDED.created_by,
+				reason = EXCLUDED.reason
 			RETURNING id, template_id, version_number, effective_from, recurrence, created_at, created_by, reason
 		)
 		SELECT
@@ -831,17 +861,7 @@ func (r *Repository) CreateTemplate(ctx context.Context, params CreateTemplatePa
 			v.reason
 		FROM upserted_template t
 		JOIN inserted_version v ON v.template_id = t.id
-	`, professionalID, effectiveFrom, recurrence, createdBy, reason)
-
-	template, err := scanTemplateWithVersion(row)
-	if err != nil {
-		if isConflictViolation(err) {
-			return ScheduleTemplate{}, ErrConflict
-		}
-		return ScheduleTemplate{}, err
-	}
-
-	return template, nil
+	`
 }
 
 func (r *Repository) GetTemplate(ctx context.Context, templateID string) (ScheduleTemplate, error) {

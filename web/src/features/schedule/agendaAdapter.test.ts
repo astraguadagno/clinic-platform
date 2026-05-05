@@ -71,11 +71,41 @@ describe('agendaAdapter', () => {
 		expect(board.days[1]?.appointments[0]).toMatchObject({
 			id: 'consultation-standalone',
 			is_standalone: true,
-			can_cancel: false,
+			can_cancel: true,
 			raw_status: 'checked_in',
 			status_label: 'En recepción',
 		});
 		expect(board.days[1]?.summary.checkedIn).toBe(1);
+	});
+
+	it('replaces matching generated template availability with standalone consultations', () => {
+		const weekAgenda: WeekAgenda = {
+			professional_id: 'professional-1',
+			week_start: '2026-04-06',
+			templates: [],
+			blocks: [],
+			consultations: [
+				consultation({
+					id: 'consultation-standalone',
+					slot_id: null,
+					status: 'scheduled',
+					scheduled_start: '2026-04-08T10:00:00Z',
+					scheduled_end: '2026-04-08T10:30:00Z',
+				}),
+			],
+			slots: [slot({ id: '', start_time: '2026-04-08T10:00:00Z', end_time: '2026-04-08T10:30:00Z', status: 'available' })],
+		};
+
+		const board = buildScheduleBoardModel(weekAgenda);
+
+		expect(board.days[2]?.slots).toHaveLength(1);
+		expect(board.days[2]?.slots[0]).toMatchObject({
+			id: 'consultation-consultation-standalone',
+			status: 'booked',
+			start_time: '2026-04-08T10:00:00Z',
+			end_time: '2026-04-08T10:30:00Z',
+		});
+		expect(board.days[2]?.summary).toMatchObject({ available: 0, booked: 1 });
 	});
 
 	it('keeps cancelled consultations visible in the summary', () => {

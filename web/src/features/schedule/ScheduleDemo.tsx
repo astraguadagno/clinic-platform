@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelAppointment, createAppointment, createSlotsBulk, fetchWeekAgenda } from '../../api/appointments';
+import { cancelAppointment, createAppointment, createConsultation, createSlotsBulk, fetchWeekAgenda, updateConsultationStatus } from '../../api/appointments';
 import { listPatients, listProfessionals } from '../../api/directory';
 import { type AgendaMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import type { Appointment, BulkCreateSlotsPayload, Slot } from '../../types/appointments';
 import type { Patient, Professional } from '../../types/directory';
-import { buildScheduleBoardModel, type ScheduleBoardAppointment, type ScheduleBoardDay } from './agendaAdapter';
+import { buildScheduleBoardModel, isGeneratedTemplateSlotID, type ScheduleBoardAppointment, type ScheduleBoardDay } from './agendaAdapter';
 import { filterPatients, normalizePatientSearchValue } from '../patient-search/matching';
 import {
   formatDateInputValue,
@@ -220,11 +220,21 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
       setSuccessMessage('');
       clearReleasedSlotFeedback();
 
-      await createAppointment({
-        slot_id: selectedSlotId,
-        patient_id: selectedPatientId,
-        professional_id: selectedProfessionalId,
-      });
+      if (selectedSlot && isGeneratedTemplateSlotID(selectedSlot.id)) {
+        await createConsultation({
+          patient_id: selectedPatientId,
+          professional_id: selectedProfessionalId,
+          source: agendaMode.kind === 'doctor-own' ? 'doctor' : 'secretary',
+          scheduled_start: selectedSlot.start_time,
+          scheduled_end: selectedSlot.end_time,
+        });
+      } else {
+        await createAppointment({
+          slot_id: selectedSlotId,
+          patient_id: selectedPatientId,
+          professional_id: selectedProfessionalId,
+        });
+      }
 
       setActiveModal(null);
       setSuccessMessage('Turno reservado correctamente.');
@@ -248,7 +258,14 @@ export function ScheduleDemo({ agendaMode, onSessionInvalid, onOpenDirectorySupp
       setAccessDeniedMessage('');
       setSuccessMessage('');
 
-      await cancelAppointment(appointmentId);
+      if (appointment?.is_standalone) {
+        await updateConsultationStatus({
+          id: appointmentId,
+          status: 'cancelled',
+        });
+      } else {
+        await cancelAppointment(appointmentId);
+      }
 
       releasedSlotIdRef.current = appointment?.slot_id ?? '';
       setReleasedSlotId(appointment?.slot_id ?? '');

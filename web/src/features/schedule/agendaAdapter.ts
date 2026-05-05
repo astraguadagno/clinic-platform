@@ -40,11 +40,17 @@ export function buildScheduleBoardModel(weekAgenda: WeekAgenda): ScheduleBoardMo
 
 	const days = weekDays.map((day) => {
 		const dayAppointments = [...(appointmentsByDate.get(day.date) ?? [])].sort(compareAppointmentsByStart);
+		const occupiedStandaloneRanges = dayAppointments.filter(
+			(appointment) => appointment.is_standalone && appointment.raw_status !== 'cancelled',
+		);
 		const standaloneSlots = dayAppointments
 			.filter((appointment) => appointment.is_standalone)
 			.map(createStandaloneSlot)
 			.filter((slot): slot is Slot => slot !== null);
-		const daySlots = [...(slotsByDate.get(day.date) ?? []), ...standaloneSlots].sort(compareSlotsByStartTime);
+		const availableTemplateSlots = (slotsByDate.get(day.date) ?? []).filter(
+			(slot) => !isSlotCoveredByStandaloneAppointment(slot, occupiedStandaloneRanges),
+		);
+		const daySlots = [...availableTemplateSlots, ...standaloneSlots].sort(compareSlotsByStartTime);
 
 		return {
 			date: day.date,
@@ -62,17 +68,46 @@ export function buildScheduleBoardModel(weekAgenda: WeekAgenda): ScheduleBoardMo
 	};
 }
 
+function isSlotCoveredByStandaloneAppointment(slot: Slot, appointments: ScheduleBoardAppointment[]) {
+	return appointments.some(
+		(appointment) =>
+			appointment.professional_id === slot.professional_id &&
+			appointment.scheduled_start === slot.start_time &&
+			appointment.scheduled_end === slot.end_time,
+	);
+}
+
+export function isGeneratedTemplateSlotID(slotID: string) {
+	return slotID.startsWith('template-slot-');
+}
+
 function groupSlotsByDate(slots: Slot[]) {
 	const byDate = new Map<string, Slot[]>();
 
 	for (const slot of slots) {
-		const date = slot.start_time.slice(0, 10);
+		const normalizedSlot = normalizeSlotID(slot);
+		const date = normalizedSlot.start_time.slice(0, 10);
 		const current = byDate.get(date) ?? [];
-		current.push(slot);
+		current.push(normalizedSlot);
 		byDate.set(date, current);
 	}
 
 	return byDate;
+}
+
+function normalizeSlotID(slot: Slot): Slot {
+	if (slot.id) {
+		return slot;
+	}
+
+	return {
+		...slot,
+		id: generatedTemplateSlotID(slot),
+	};
+}
+
+function generatedTemplateSlotID(slot: Slot) {
+	return `template-slot-${slot.professional_id}-${slot.start_time}-${slot.end_time}`;
 }
 
 function groupAppointmentsByDate(consultations: Consultation[]) {
@@ -104,7 +139,7 @@ function adaptConsultationToAppointment(consultation: Consultation): ScheduleBoa
 		raw_status: consultation.status,
 		status_label: consultationStatusLabel(consultation.status),
 		is_standalone: isStandalone,
-		can_cancel: !isStandalone && consultation.status !== 'cancelled' && consultation.status !== 'completed' && consultation.status !== 'no_show',
+		can_cancel: consultation.status !== 'cancelled' && consultation.status !== 'completed' && consultation.status !== 'no_show',
 		source: consultation.source,
 		scheduled_start: consultation.scheduled_start,
 		scheduled_end: consultation.scheduled_end,
@@ -113,6 +148,9 @@ function adaptConsultationToAppointment(consultation: Consultation): ScheduleBoa
 
 function createStandaloneSlot(appointment: ScheduleBoardAppointment): Slot | null {
 	if (!appointment.is_standalone) {
+		return null;
+	}
+	if (appointment.raw_status === 'cancelled') {
 		return null;
 	}
 
