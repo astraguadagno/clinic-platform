@@ -362,6 +362,52 @@ func TestPatchClinicalHistoryUpdatesProvidedFieldsForDoctor(t *testing.T) {
 	}
 }
 
+func TestPatchClinicalHistoryRejectsInvalidPayloads(t *testing.T) {
+	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
+	patientID := "0f0f6c4d-7bbb-4d8e-94f9-f13fca1d16ca"
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "unknown field", body: `{"allergies":"Penicilina","patient_id":"other-patient"}`},
+		{name: "multiple json documents", body: `{"allergies":"Penicilina"}{"habitual_medication":"Losartán"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &stubDirectoryRepository{
+				getUserBySessionTokenFn: func(context.Context, string, time.Time) (directory.User, error) {
+					return directory.User{ID: "user-1", Email: "doctor@clinic.local", Role: "doctor", ProfessionalID: &professionalID, Active: true}, nil
+				},
+				updateClinicalHistoryFn: func(context.Context, directory.UpdateClinicalHistoryParams) (directory.ClinicalHistory, error) {
+					t.Fatal("UpdateClinicalHistory must not be called for invalid clinical history payload")
+					return directory.ClinicalHistory{}, nil
+				},
+			}
+
+			server := NewServer(testConfig(), repo)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPatch, "/patients/"+patientID+"/clinical-history", bytes.NewBufferString(tt.body))
+			request.Header.Set("Authorization", "Bearer test-token")
+
+			server.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+			}
+
+			var response map[string]string
+			if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if response["error"] != "invalid json body" {
+				t.Fatalf("error = %q, want invalid json body", response["error"])
+			}
+		})
+	}
+}
+
 func TestClinicalHistoryReturnsForbiddenForSecretary(t *testing.T) {
 	professionalID := "f58d7e2f-c5fc-4884-b7bb-a3d14577a995"
 	repo := &stubDirectoryRepository{

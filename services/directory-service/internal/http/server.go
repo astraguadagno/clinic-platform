@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -515,8 +516,8 @@ func (s *Server) updateClinicalHistory(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	var request directory.UpdateClinicalHistoryParams
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	request, err := decodeClinicalHistoryUpdateRequest(r)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
@@ -537,6 +538,26 @@ func (s *Server) updateClinicalHistory(w http.ResponseWriter, r *http.Request, p
 	}
 
 	writeJSON(w, http.StatusOK, history)
+}
+
+func decodeClinicalHistoryUpdateRequest(r *http.Request) (directory.UpdateClinicalHistoryParams, error) {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	var request directory.UpdateClinicalHistoryParams
+	if err := decoder.Decode(&request); err != nil {
+		return directory.UpdateClinicalHistoryParams{}, err
+	}
+
+	var extra struct{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return directory.UpdateClinicalHistoryParams{}, errors.New("multiple json documents")
+		}
+		return directory.UpdateClinicalHistoryParams{}, err
+	}
+
+	return request, nil
 }
 
 func (s *Server) listPatientClinicalNotes(w http.ResponseWriter, r *http.Request, patientID string) {

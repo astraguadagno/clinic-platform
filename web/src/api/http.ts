@@ -3,7 +3,7 @@ import { readStoredSession } from '../auth/session';
 type QueryValue = string | number | boolean | null | undefined;
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   headers?: HeadersInit;
   query?: Record<string, QueryValue>;
@@ -58,7 +58,13 @@ export async function request<T>(baseUrl: string, path: string, options: Request
     throw new ApiError(payload.error ?? `Request failed with status ${response.status}`, response.status);
   }
 
-  return (await response.json()) as T;
+  const text = await response.text();
+
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
 }
 
 async function readJsonSafely<T>(response: Response): Promise<T | null> {
