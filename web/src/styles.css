@@ -121,6 +121,53 @@ button {
   place-content: center;
 }
 
+.contextual-header {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(237, 244, 255, 0.82));
+  box-shadow: var(--shadow-card);
+}
+
+.contextual-header-operational {
+  border-color: rgba(115, 92, 0, 0.18);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 247, 237, 0.78));
+}
+
+.contextual-header-body,
+.contextual-header-meta,
+.contextual-header-feedback {
+  display: grid;
+  gap: 10px;
+}
+
+.contextual-header-title-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.contextual-header h2,
+.contextual-header p {
+  margin: 0;
+}
+
+.contextual-header h2 {
+  font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+}
+
+.contextual-header-meta,
+.contextual-header-feedback,
+.contextual-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .foundation-summary-tile {
   min-height: 104px;
 }
@@ -1062,6 +1109,23 @@ button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.patients-section {
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.patients-section-ficha {
+  border-left: 4px solid rgba(37, 99, 235, 0.34);
+}
+
+.patients-section-notes {
+  border-left: 4px solid rgba(115, 92, 0, 0.34);
+}
+
+.patients-section-evolutions,
+.patients-section-new-evolution {
+  border-left: 4px solid rgba(87, 0, 0, 0.26);
 }
 
 .encounter-card {

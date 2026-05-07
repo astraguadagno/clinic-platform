@@ -55,6 +55,54 @@ describe('PatientsWorkspace', () => {
     listPatientClinicalNotesMock.mockResolvedValue({ items: [] });
   });
 
+  it('promotes the selected patient into a contextual workspace header without moving search behavior', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
+    listPatientClinicalNotesMock.mockResolvedValue({ items: [patientClinicalNote()] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    const searchControl = await screen.findByRole('group', { name: /buscador de pacientes/i });
+    const contextHeader = await screen.findByRole('region', { name: /contexto del paciente/i });
+
+    expect(within(searchControl).getByRole('searchbox', { name: /buscar paciente/i })).toBeInTheDocument();
+    expect(within(contextHeader).getByRole('heading', { name: /Juan Pérez/i })).toBeInTheDocument();
+    expect(within(contextHeader).getByText(/documento 12345678/i)).toBeInTheDocument();
+    expect(within(contextHeader).getByText(/ficha clínica editable/i)).toBeInTheDocument();
+    expect(await within(contextHeader).findByText(/evoluciones: 1/i)).toBeInTheDocument();
+    expect(await within(contextHeader).findByText(/notas clínicas: 1/i)).toBeInTheDocument();
+  });
+
+  it('renders an empty contextual header without implying an active clinical record', async () => {
+    listPatientsMock.mockResolvedValue({ items: [] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'secretary-operational' }} onSessionInvalid={vi.fn()} />);
+
+    const contextHeader = await screen.findByRole('region', { name: /contexto del paciente/i });
+
+    expect(within(contextHeader).getByRole('heading', { name: /Seleccioná un paciente/i })).toBeInTheDocument();
+    expect(within(contextHeader).getByText(/sin ficha clínica activa/i)).toBeInTheDocument();
+    expect(within(contextHeader).queryByText(/ficha clínica editable/i)).not.toBeInTheDocument();
+  });
+
+  it('separates ficha clínica, consultation-linked notes, and evolutions as distinct clinical concepts', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
+    listPatientClinicalNotesMock.mockResolvedValue({ items: [patientClinicalNote()] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    const fichaSection = await screen.findByRole('region', { name: /ficha clínica editable/i });
+    const notesSection = await screen.findByRole('region', { name: /notas clínicas por paciente/i });
+    const evolutionsSection = await screen.findByRole('region', { name: /consultas y evoluciones/i });
+
+    expect(within(fichaSection).getByText(/estado editable del paciente/i)).toBeInTheDocument();
+    expect(within(fichaSection).getByText(/no actualiza notas ni evoluciones automáticamente/i)).toBeInTheDocument();
+    expect(within(notesSection).getByText(/Vinculada a consulta/i)).toBeInTheDocument();
+    expect(within(notesSection).queryByText(/Standalone|Con consulta/i)).not.toBeInTheDocument();
+    expect(within(evolutionsSection).getByText('Control inicial')).toBeInTheDocument();
+  });
+
   it('shows doctor clinical data when mode allows encounters', async () => {
     listPatientsMock.mockResolvedValue({ items: [activePatient()] });
     listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
@@ -373,12 +421,12 @@ describe('PatientsWorkspace', () => {
     fireEvent.click(await screen.findByRole('option', { name: /María Gómez/i }));
 
     expect(screen.getByText(/^Paciente$/i)).toBeInTheDocument();
-    expect(screen.getByText('María Gómez')).toBeInTheDocument();
+    expect(screen.getAllByText('María Gómez').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /actualizar/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
+      expect(screen.getAllByText('Juan Pérez').length).toBeGreaterThan(0);
     });
 
     expect(screen.queryByText('María Gómez')).not.toBeInTheDocument();

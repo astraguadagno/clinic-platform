@@ -1,5 +1,5 @@
 import { type FocusEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
+import { ContextualHeader, EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import { type PatientsMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
 import {
@@ -116,6 +116,14 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
       : patientsMode.kind === 'forbidden'
         ? patientsMode.message
         : '';
+  const patientContextTitle = selectedPatient
+    ? `${selectedPatient.first_name} ${selectedPatient.last_name}`
+    : 'Seleccioná un paciente';
+  const patientContextDescription = selectedPatient
+    ? canAccessClinical
+      ? 'Contexto clínico del paciente seleccionado; la ficha, notas y evoluciones se mantienen separadas.'
+      : 'Contexto operativo del paciente seleccionado; el trabajo clínico permanece bloqueado para este actor.'
+    : 'Usá el buscador para elegir un paciente antes de abrir una ficha clínica activa.';
 
   const resolveViewError = useCallback(
     (error: unknown, fallbackMessage: string, forbiddenFallbackMessage: string) => {
@@ -673,8 +681,32 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
         </div>
       </SectionCard>
 
+      <ContextualHeader
+        eyebrow="Contexto del paciente"
+        tone={canAccessClinical ? 'clinical' : 'operational'}
+        title={patientContextTitle}
+        description={patientContextDescription}
+        meta={(
+          <>
+            <span className="badge neutral">{selectedPatient ? `Documento ${selectedPatient.document}` : 'Sin ficha clínica activa'}</span>
+            <span className={`badge ${canAccessClinical && selectedPatient ? 'info' : 'neutral'}`}>
+              {canAccessClinical && selectedPatient ? 'Ficha clínica editable' : 'Ficha clínica no abierta'}
+            </span>
+            <span className="badge neutral">Evoluciones: {selectedPatient && canAccessClinical ? encounters.length : 0}</span>
+            <span className="badge neutral">Notas clínicas: {selectedPatient && canAccessClinical ? patientClinicalNotes.length : 0}</span>
+          </>
+        )}
+        feedback={(successMessage || patientsError || !selectedPatient) ? (
+          <>
+            {successMessage ? <span className="badge success">{successMessage}</span> : null}
+            {patientsError ? <span className="badge error">{patientsError}</span> : null}
+            {!selectedPatient ? <span className="helper">El header no implica una ficha clínica activa.</span> : null}
+          </>
+        ) : undefined}
+      />
+
       <div className="stack patients-main">
-          <SectionCard className="stack">
+          <SectionCard className="stack patients-section patients-section-summary" aria-label="Resumen del paciente">
             <div className="section-header">
               <div>
                 <h3>Resumen del paciente</h3>
@@ -728,11 +760,11 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
             )}
           </SectionCard>
 
-          <SectionCard className="stack">
+          <SectionCard className="stack patients-section patients-section-ficha" aria-label="Ficha clínica editable">
             <div className="section-header">
               <div>
                 <h3>Ficha clínica</h3>
-                <p>Datos base vivos del paciente. Separada de notas, encounters, SOAP, recetas y estudios.</p>
+                <p>Estado editable del paciente. Separada de notas, consultas, evoluciones, recetas y estudios.</p>
               </div>
               {canAccessClinical && selectedPatientId ? (
                 <button className="button secondary" type="button" onClick={() => void loadClinicalHistory(selectedPatientId)} disabled={isLoadingHistory}>
@@ -792,17 +824,17 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                   <button className="button" type="button" onClick={() => void handleSaveClinicalHistory()} disabled={!selectedPatientId || isSavingHistory}>
                     {isSavingHistory ? 'Guardando...' : 'Guardar ficha'}
                   </button>
-                  <span className="helper helper-inline">No actualiza notas ni encounters automáticamente.</span>
+                  <span className="helper helper-inline">No actualiza notas ni evoluciones automáticamente.</span>
                 </div>
               </>
             )}
           </SectionCard>
 
-          <SectionCard className="stack">
+          <SectionCard className="stack patients-section patients-section-notes" aria-label="Notas clínicas por paciente">
             <div className="section-header">
               <div>
-                <h3>Notas clínicas independientes</h3>
-                <p>Notas por paciente, opcionalmente asociadas por UUID técnico a una consulta.</p>
+                <h3>Notas clínicas por paciente</h3>
+                <p>Artefactos de nota separados de la ficha; pueden estar vinculados a una consulta o quedar sin vínculo.</p>
               </div>
               {canAccessClinical && selectedPatientId ? (
                 <button className="button secondary" type="button" onClick={() => void loadClinicalNotes(selectedPatientId)} disabled={isLoadingClinicalNotes}>
@@ -844,7 +876,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                 {isLoadingClinicalNotes ? (
                   <div className="empty-state empty-state-soft">Cargando notas clínicas...</div>
                 ) : patientClinicalNotes.length === 0 ? (
-                  <div className="empty-state empty-state-soft">Sin notas clínicas independientes todavía.</div>
+                  <div className="empty-state empty-state-soft">Sin notas clínicas por paciente todavía.</div>
                 ) : (
                   <div className="list">
                     {patientClinicalNotes.map((note) => (
@@ -871,7 +903,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                                 <span className="surface-tab-eyebrow">Nota clínica</span>
                                 <h4>{formatDateTime(note.created_at)}</h4>
                               </div>
-                              <span className="badge neutral">{note.consultation_id ? 'Con consulta' : 'Standalone'}</span>
+                              <span className="badge neutral">{note.consultation_id ? 'Vinculada a consulta' : 'Independiente'}</span>
                             </div>
                             <p className="encounter-note">{note.content}</p>
                             <div className="appointment-meta">
@@ -892,11 +924,11 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
             )}
           </SectionCard>
 
-          <SectionCard className="stack">
+          <SectionCard className="stack patients-section patients-section-evolutions" aria-label="Consultas y evoluciones">
             <div className="section-header">
               <div>
-                <h3>Encounters</h3>
-                <p>Listado descendente por fecha para ver la actividad clínica cuando el actor lo tiene habilitado.</p>
+                <h3>Consultas y evoluciones</h3>
+                <p>Eventos clínicos ordenados por fecha; no forman parte de la ficha editable.</p>
               </div>
               {canAccessClinical ? (
                 <button
@@ -953,7 +985,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
             )}
           </SectionCard>
 
-          <SectionCard className="stack">
+          <SectionCard className="stack patients-section patients-section-new-evolution" aria-label="Nueva nota o evolución">
             <div className="section-header">
               <div>
                 <h3>Nueva nota / evolución</h3>
