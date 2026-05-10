@@ -2,9 +2,18 @@ import { type FocusEvent, useCallback, useEffect, useMemo, useRef, useState } fr
 import { EmptyState, PageContainer, SectionCard } from '../../app-shell/AppShell.primitives';
 import { type PatientsMode } from '../../auth/actorCapabilities';
 import { resolveAuthenticatedViewError } from '../../auth/authenticatedViewPolicy';
-import { createPatientEncounter, listPatientEncounters } from '../../api/clinical';
+import {
+  createPatientClinicalNote,
+  createPatientEncounter,
+  deletePatientClinicalNote,
+  getClinicalHistory,
+  listPatientClinicalNotes,
+  listPatientEncounters,
+  updateClinicalHistory,
+  updatePatientClinicalNote,
+} from '../../api/clinical';
 import { listPatients } from '../../api/directory';
-import type { CreateEncounterPayload, Encounter, Patient } from '../../types/clinical';
+import type { ClinicalHistory, CreateEncounterPayload, Encounter, Patient, PatientClinicalNote, UpdateClinicalHistoryPayload } from '../../types/clinical';
 import { filterPatients, normalizePatientSearchValue } from '../patient-search/matching';
 
 type PatientsWorkspaceProps = {
@@ -18,26 +27,73 @@ type EncounterFormState = {
   occurred_at: string;
 };
 
+type ClinicalHistoryFormState = {
+  weight_kg: string;
+  height_cm: string;
+  antecedentes: string;
+  allergies: string;
+  habitual_medication: string;
+  chronic_conditions: string;
+  habits: string;
+  general_observations: string;
+};
+
+type PatientClinicalNoteFormState = {
+  content: string;
+  consultation_id: string;
+};
+
 const EMPTY_ENCOUNTER_FORM: EncounterFormState = {
   note: '',
   occurred_at: '',
+};
+
+const EMPTY_HISTORY_FORM: ClinicalHistoryFormState = {
+  weight_kg: '',
+  height_cm: '',
+  antecedentes: '',
+  allergies: '',
+  habitual_medication: '',
+  chronic_conditions: '',
+  habits: '',
+  general_observations: '',
+};
+
+const EMPTY_NOTE_FORM: PatientClinicalNoteFormState = {
+  content: '',
+  consultation_id: '',
 };
 
 export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirectorySupport }: PatientsWorkspaceProps) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [encounters, setEncounters] = useState<Encounter[]>([]);
+  const [clinicalHistory, setClinicalHistory] = useState<ClinicalHistory | null>(null);
+  const [historyForm, setHistoryForm] = useState<ClinicalHistoryFormState>(EMPTY_HISTORY_FORM);
+  const [patientClinicalNotes, setPatientClinicalNotes] = useState<PatientClinicalNote[]>([]);
+  const [clinicalNoteForm, setClinicalNoteForm] = useState<PatientClinicalNoteFormState>(EMPTY_NOTE_FORM);
+  const [editingClinicalNoteId, setEditingClinicalNoteId] = useState('');
+  const [editingClinicalNoteForm, setEditingClinicalNoteForm] = useState<PatientClinicalNoteFormState>(EMPTY_NOTE_FORM);
   const [sidebarQuery, setSidebarQuery] = useState('');
   const [form, setForm] = useState<EncounterFormState>(EMPTY_ENCOUNTER_FORM);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isLoadingEncounters, setIsLoadingEncounters] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isSavingHistory, setIsSavingHistory] = useState(false);
+  const [isLoadingClinicalNotes, setIsLoadingClinicalNotes] = useState(false);
+  const [isSavingClinicalNote, setIsSavingClinicalNote] = useState(false);
   const [isCreatingEncounter, setIsCreatingEncounter] = useState(false);
   const [patientsError, setPatientsError] = useState('');
   const [encountersError, setEncountersError] = useState('');
+  const [historyError, setHistoryError] = useState('');
+  const [clinicalNotesError, setClinicalNotesError] = useState('');
   const [formError, setFormError] = useState('');
+  const [clinicalNoteFormError, setClinicalNoteFormError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchControlRef = useRef<HTMLDivElement | null>(null);
+  const clinicalHistoryRequestRef = useRef(0);
+  const clinicalNotesRequestRef = useRef(0);
 
   const activePatients = useMemo(() => patients.filter((patient) => patient.active), [patients]);
   const filteredPatients = useMemo(() => filterPatients(activePatients, sidebarQuery), [activePatients, sidebarQuery]);
@@ -83,8 +139,13 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
       setPatients([]);
       setSelectedPatientId('');
       setEncounters([]);
+      setClinicalHistory(null);
+      setHistoryForm(EMPTY_HISTORY_FORM);
+      setPatientClinicalNotes([]);
       setPatientsError('');
       setEncountersError(patientsMode.message);
+      setHistoryError(patientsMode.message);
+      setClinicalNotesError(patientsMode.message);
       setIsBootstrapping(false);
       return;
     }
@@ -93,6 +154,8 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
       setIsBootstrapping(true);
       setPatientsError('');
       setEncountersError(patientsMode.kind === 'secretary-operational' ? clinicalDeniedMessage : '');
+      setHistoryError(patientsMode.kind === 'secretary-operational' ? clinicalDeniedMessage : '');
+      setClinicalNotesError(patientsMode.kind === 'secretary-operational' ? clinicalDeniedMessage : '');
 
       const response = await listPatients();
       setPatients(response.items);
@@ -104,6 +167,8 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
       );
       setPatientsError(nextError.errorMessage);
       setEncountersError(nextError.deniedMessage);
+      setHistoryError(nextError.deniedMessage);
+      setClinicalNotesError(nextError.deniedMessage);
     } finally {
       setIsBootstrapping(false);
     }
@@ -138,6 +203,96 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
     [canAccessClinical, clinicalDeniedMessage, resolveViewError],
   );
 
+  const loadClinicalHistory = useCallback(
+    async (patientId: string) => {
+      const requestId = clinicalHistoryRequestRef.current + 1;
+      clinicalHistoryRequestRef.current = requestId;
+
+      if (!canAccessClinical) {
+        setClinicalHistory(null);
+        setHistoryForm(EMPTY_HISTORY_FORM);
+        setHistoryError(clinicalDeniedMessage);
+        return;
+      }
+
+      try {
+        setIsLoadingHistory(true);
+        setHistoryError('');
+        setClinicalHistory(null);
+        setHistoryForm(EMPTY_HISTORY_FORM);
+
+        const history = await getClinicalHistory(patientId);
+        if (clinicalHistoryRequestRef.current !== requestId) {
+          return;
+        }
+
+        setClinicalHistory(history);
+        setHistoryForm(clinicalHistoryToForm(history));
+      } catch (error) {
+        if (clinicalHistoryRequestRef.current !== requestId) {
+          return;
+        }
+
+        setClinicalHistory(null);
+        setHistoryForm(EMPTY_HISTORY_FORM);
+        const nextError = resolveViewError(
+          error,
+          'No se pudo cargar la ficha clínica del paciente.',
+          'No tenés permiso para consultar la ficha clínica.',
+        );
+        setHistoryError(nextError.deniedMessage || nextError.errorMessage);
+      } finally {
+        if (clinicalHistoryRequestRef.current === requestId) {
+          setIsLoadingHistory(false);
+        }
+      }
+    },
+    [canAccessClinical, clinicalDeniedMessage, resolveViewError],
+  );
+
+  const loadClinicalNotes = useCallback(
+    async (patientId: string) => {
+      const requestId = clinicalNotesRequestRef.current + 1;
+      clinicalNotesRequestRef.current = requestId;
+
+      if (!canAccessClinical) {
+        setPatientClinicalNotes([]);
+        setClinicalNotesError(clinicalDeniedMessage);
+        return;
+      }
+
+      try {
+        setIsLoadingClinicalNotes(true);
+        setClinicalNotesError('');
+        setPatientClinicalNotes([]);
+
+        const response = await listPatientClinicalNotes(patientId);
+        if (clinicalNotesRequestRef.current !== requestId) {
+          return;
+        }
+
+        setPatientClinicalNotes(sortPatientClinicalNotes(response.items));
+      } catch (error) {
+        if (clinicalNotesRequestRef.current !== requestId) {
+          return;
+        }
+
+        setPatientClinicalNotes([]);
+        const nextError = resolveViewError(
+          error,
+          'No se pudieron cargar las notas clínicas del paciente.',
+          'No tenés permiso para consultar notas clínicas.',
+        );
+        setClinicalNotesError(nextError.deniedMessage || nextError.errorMessage);
+      } finally {
+        if (clinicalNotesRequestRef.current === requestId) {
+          setIsLoadingClinicalNotes(false);
+        }
+      }
+    },
+    [canAccessClinical, clinicalDeniedMessage, resolveViewError],
+  );
+
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
@@ -165,17 +320,29 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
     if (!selectedPatientId) {
       setEncounters([]);
       setEncountersError(canAccessClinical ? '' : clinicalDeniedMessage);
+      setClinicalHistory(null);
+      setHistoryForm(EMPTY_HISTORY_FORM);
+      setHistoryError(canAccessClinical ? '' : clinicalDeniedMessage);
+      setPatientClinicalNotes([]);
+      setClinicalNotesError(canAccessClinical ? '' : clinicalDeniedMessage);
       return;
     }
 
     if (!canAccessClinical) {
       setEncounters([]);
       setEncountersError(clinicalDeniedMessage);
+      setClinicalHistory(null);
+      setHistoryForm(EMPTY_HISTORY_FORM);
+      setHistoryError(clinicalDeniedMessage);
+      setPatientClinicalNotes([]);
+      setClinicalNotesError(clinicalDeniedMessage);
       return;
     }
 
     void loadEncounters(selectedPatientId);
-  }, [canAccessClinical, clinicalDeniedMessage, loadEncounters, selectedPatientId]);
+    void loadClinicalHistory(selectedPatientId);
+    void loadClinicalNotes(selectedPatientId);
+  }, [canAccessClinical, clinicalDeniedMessage, loadClinicalHistory, loadClinicalNotes, loadEncounters, selectedPatientId]);
 
   async function handleCreateEncounter() {
     if (!canAccessClinical) {
@@ -226,6 +393,143 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
     } finally {
       setIsCreatingEncounter(false);
     }
+  }
+
+  async function handleSaveClinicalHistory() {
+    if (!canAccessClinical) {
+      setHistoryError(clinicalDeniedMessage);
+      return;
+    }
+
+    if (!selectedPatientId) {
+      setHistoryError('Elegí un paciente antes de guardar la ficha.');
+      return;
+    }
+
+    const payload = historyFormToPayload(historyForm);
+    if (!payload) {
+      setHistoryError('Peso y altura deben ser números válidos.');
+      return;
+    }
+
+    try {
+      setIsSavingHistory(true);
+      setHistoryError('');
+      setSuccessMessage('');
+
+      const history = await updateClinicalHistory(selectedPatientId, payload);
+      setClinicalHistory(history);
+      setHistoryForm(clinicalHistoryToForm(history));
+      setSuccessMessage('Ficha clínica guardada correctamente.');
+    } catch (error) {
+      const nextError = resolveViewError(
+        error,
+        'No se pudo guardar la ficha clínica.',
+        'No tenés permiso para guardar la ficha clínica.',
+      );
+      setHistoryError(nextError.deniedMessage || nextError.errorMessage);
+    } finally {
+      setIsSavingHistory(false);
+    }
+  }
+
+  async function handleCreateClinicalNote() {
+    if (!canAccessClinical) {
+      setClinicalNoteFormError(clinicalDeniedMessage);
+      return;
+    }
+
+    if (!selectedPatientId) {
+      setClinicalNoteFormError('Elegí un paciente antes de guardar una nota clínica.');
+      return;
+    }
+
+    const content = clinicalNoteForm.content.trim();
+    if (!content) {
+      setClinicalNoteFormError('Escribí una nota clínica antes de guardar.');
+      return;
+    }
+
+    try {
+      setIsSavingClinicalNote(true);
+      setClinicalNoteFormError('');
+      setClinicalNotesError('');
+      setSuccessMessage('');
+
+      const note = await createPatientClinicalNote(selectedPatientId, {
+        content,
+        consultation_id: normalizeNullableText(clinicalNoteForm.consultation_id),
+      });
+      setPatientClinicalNotes((current) => sortPatientClinicalNotes([note, ...current]));
+      setClinicalNoteForm(EMPTY_NOTE_FORM);
+      setSuccessMessage('Nota clínica guardada correctamente.');
+    } catch (error) {
+      const nextError = resolveViewError(
+        error,
+        'No se pudo guardar la nota clínica.',
+        'No tenés permiso para guardar notas clínicas.',
+      );
+      setClinicalNoteFormError(nextError.deniedMessage || nextError.errorMessage);
+    } finally {
+      setIsSavingClinicalNote(false);
+    }
+  }
+
+  async function handleUpdateClinicalNote(noteId: string) {
+    if (!selectedPatientId) {
+      return;
+    }
+
+    const content = editingClinicalNoteForm.content.trim();
+    if (!content) {
+      setClinicalNotesError('La nota clínica editada no puede quedar vacía.');
+      return;
+    }
+
+    try {
+      setClinicalNotesError('');
+      const note = await updatePatientClinicalNote(selectedPatientId, noteId, {
+        content,
+        consultation_id: normalizeNullableText(editingClinicalNoteForm.consultation_id),
+      });
+      setPatientClinicalNotes((current) => sortPatientClinicalNotes(current.map((item) => (item.id === noteId ? note : item))));
+      setEditingClinicalNoteId('');
+      setEditingClinicalNoteForm(EMPTY_NOTE_FORM);
+    } catch (error) {
+      const nextError = resolveViewError(
+        error,
+        'No se pudo editar la nota clínica.',
+        'No tenés permiso para editar notas clínicas.',
+      );
+      setClinicalNotesError(nextError.deniedMessage || nextError.errorMessage);
+    }
+  }
+
+  async function handleDeleteClinicalNote(noteId: string) {
+    if (!selectedPatientId) {
+      return;
+    }
+
+    try {
+      setClinicalNotesError('');
+      await deletePatientClinicalNote(selectedPatientId, noteId);
+      setPatientClinicalNotes((current) => current.filter((note) => note.id !== noteId));
+    } catch (error) {
+      const nextError = resolveViewError(
+        error,
+        'No se pudo eliminar la nota clínica.',
+        'No tenés permiso para eliminar notas clínicas.',
+      );
+      setClinicalNotesError(nextError.deniedMessage || nextError.errorMessage);
+    }
+  }
+
+  function startEditingClinicalNote(note: PatientClinicalNote) {
+    setEditingClinicalNoteId(note.id);
+    setEditingClinicalNoteForm({
+      content: note.content,
+      consultation_id: note.consultation_id ?? '',
+    });
   }
 
   function handleSearchBlur(event: FocusEvent<HTMLDivElement>) {
@@ -427,6 +731,170 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
           <SectionCard className="stack">
             <div className="section-header">
               <div>
+                <h3>Ficha clínica</h3>
+                <p>Datos base vivos del paciente. Separada de notas, encounters, SOAP, recetas y estudios.</p>
+              </div>
+              {canAccessClinical && selectedPatientId ? (
+                <button className="button secondary" type="button" onClick={() => void loadClinicalHistory(selectedPatientId)} disabled={isLoadingHistory}>
+                  {isLoadingHistory ? 'Actualizando...' : 'Recargar ficha'}
+                </button>
+              ) : null}
+            </div>
+
+            {historyError ? <div className="inline-note inline-note-error">{historyError}</div> : null}
+
+            {!selectedPatient ? (
+              <div className="empty-state empty-state-soft">Elegí un paciente para ver su ficha clínica.</div>
+            ) : !canAccessClinical ? (
+              <div className="empty-state">
+                <strong>Ficha clínica bloqueada</strong>
+                <span>{clinicalDeniedMessage}</span>
+              </div>
+            ) : isLoadingHistory && !clinicalHistory ? (
+              <div className="empty-state empty-state-soft">Cargando ficha clínica...</div>
+            ) : (
+              <>
+                <div className="form-grid">
+                  <div className="field">
+                    <label htmlFor="history-weight">Peso (kg)</label>
+                    <input id="history-weight" inputMode="decimal" value={historyForm.weight_kg} onChange={(event) => setHistoryForm((current) => ({ ...current, weight_kg: event.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="history-height">Altura (cm)</label>
+                    <input id="history-height" inputMode="decimal" value={historyForm.height_cm} onChange={(event) => setHistoryForm((current) => ({ ...current, height_cm: event.target.value }))} />
+                  </div>
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="history-antecedentes">Antecedentes</label>
+                    <textarea id="history-antecedentes" value={historyForm.antecedentes} onChange={(event) => setHistoryForm((current) => ({ ...current, antecedentes: event.target.value }))} />
+                  </div>
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="history-allergies">Alergias</label>
+                    <textarea id="history-allergies" value={historyForm.allergies} onChange={(event) => setHistoryForm((current) => ({ ...current, allergies: event.target.value }))} />
+                  </div>
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="history-medication">Medicación habitual</label>
+                    <textarea id="history-medication" value={historyForm.habitual_medication} onChange={(event) => setHistoryForm((current) => ({ ...current, habitual_medication: event.target.value }))} />
+                  </div>
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="history-conditions">Condiciones crónicas</label>
+                    <textarea id="history-conditions" value={historyForm.chronic_conditions} onChange={(event) => setHistoryForm((current) => ({ ...current, chronic_conditions: event.target.value }))} />
+                  </div>
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="history-habits">Hábitos</label>
+                    <textarea id="history-habits" value={historyForm.habits} onChange={(event) => setHistoryForm((current) => ({ ...current, habits: event.target.value }))} />
+                  </div>
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="history-observations">Observaciones generales</label>
+                    <textarea id="history-observations" value={historyForm.general_observations} onChange={(event) => setHistoryForm((current) => ({ ...current, general_observations: event.target.value }))} />
+                  </div>
+                </div>
+                <div className="toolbar">
+                  <button className="button" type="button" onClick={() => void handleSaveClinicalHistory()} disabled={!selectedPatientId || isSavingHistory}>
+                    {isSavingHistory ? 'Guardando...' : 'Guardar ficha'}
+                  </button>
+                  <span className="helper helper-inline">No actualiza notas ni encounters automáticamente.</span>
+                </div>
+              </>
+            )}
+          </SectionCard>
+
+          <SectionCard className="stack">
+            <div className="section-header">
+              <div>
+                <h3>Notas clínicas independientes</h3>
+                <p>Notas por paciente, opcionalmente asociadas por UUID técnico a una consulta.</p>
+              </div>
+              {canAccessClinical && selectedPatientId ? (
+                <button className="button secondary" type="button" onClick={() => void loadClinicalNotes(selectedPatientId)} disabled={isLoadingClinicalNotes}>
+                  {isLoadingClinicalNotes ? 'Actualizando...' : 'Recargar notas'}
+                </button>
+              ) : null}
+            </div>
+
+            {clinicalNotesError ? <div className="inline-note inline-note-error">{clinicalNotesError}</div> : null}
+
+            {!selectedPatient ? (
+              <div className="empty-state empty-state-soft">Elegí un paciente para ver sus notas clínicas.</div>
+            ) : !canAccessClinical ? (
+              <div className="empty-state">
+                <strong>Notas clínicas bloqueadas</strong>
+                <span>{clinicalDeniedMessage}</span>
+              </div>
+            ) : (
+              <>
+                <div className="form-grid">
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="patient-clinical-note-content">Nueva nota clínica</label>
+                    <textarea id="patient-clinical-note-content" value={clinicalNoteForm.content} onChange={(event) => setClinicalNoteForm((current) => ({ ...current, content: event.target.value }))} />
+                  </div>
+                  <div className="field form-grid-span-full">
+                    <label htmlFor="patient-clinical-note-consultation">Consulta asociada (UUID opcional)</label>
+                    <input id="patient-clinical-note-consultation" value={clinicalNoteForm.consultation_id} onChange={(event) => setClinicalNoteForm((current) => ({ ...current, consultation_id: event.target.value }))} />
+                  </div>
+                </div>
+
+                {clinicalNoteFormError ? <div className="inline-note inline-note-error">{clinicalNoteFormError}</div> : null}
+
+                <div className="toolbar">
+                  <button className="button" type="button" onClick={() => void handleCreateClinicalNote()} disabled={!selectedPatientId || isSavingClinicalNote}>
+                    {isSavingClinicalNote ? 'Guardando...' : 'Guardar nota clínica'}
+                  </button>
+                </div>
+
+                {isLoadingClinicalNotes ? (
+                  <div className="empty-state empty-state-soft">Cargando notas clínicas...</div>
+                ) : patientClinicalNotes.length === 0 ? (
+                  <div className="empty-state empty-state-soft">Sin notas clínicas independientes todavía.</div>
+                ) : (
+                  <div className="list">
+                    {patientClinicalNotes.map((note) => (
+                      <article key={note.id} className="encounter-card">
+                        {editingClinicalNoteId === note.id ? (
+                          <>
+                            <div className="field">
+                              <label htmlFor={`edit-clinical-note-${note.id}`}>Editar contenido de nota clínica</label>
+                              <textarea id={`edit-clinical-note-${note.id}`} value={editingClinicalNoteForm.content} onChange={(event) => setEditingClinicalNoteForm((current) => ({ ...current, content: event.target.value }))} />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`edit-clinical-note-consultation-${note.id}`}>Editar consulta asociada</label>
+                              <input id={`edit-clinical-note-consultation-${note.id}`} value={editingClinicalNoteForm.consultation_id} onChange={(event) => setEditingClinicalNoteForm((current) => ({ ...current, consultation_id: event.target.value }))} />
+                            </div>
+                            <div className="toolbar">
+                              <button className="button" type="button" onClick={() => void handleUpdateClinicalNote(note.id)}>Guardar cambios de nota clínica</button>
+                              <button className="button secondary" type="button" onClick={() => setEditingClinicalNoteId('')}>Cancelar edición</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="section-header">
+                              <div>
+                                <span className="surface-tab-eyebrow">Nota clínica</span>
+                                <h4>{formatDateTime(note.created_at)}</h4>
+                              </div>
+                              <span className="badge neutral">{note.consultation_id ? 'Con consulta' : 'Standalone'}</span>
+                            </div>
+                            <p className="encounter-note">{note.content}</p>
+                            <div className="appointment-meta">
+                              <span className="muted">Profesional: {note.professional_id}</span>
+                              <span className="muted">Consulta: {note.consultation_id ?? 'sin vínculo'}</span>
+                            </div>
+                            <div className="toolbar">
+                              <button className="button secondary" type="button" onClick={() => startEditingClinicalNote(note)}>Editar nota clínica</button>
+                              <button className="button secondary" type="button" onClick={() => void handleDeleteClinicalNote(note.id)}>Eliminar nota clínica</button>
+                            </div>
+                          </>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </SectionCard>
+
+          <SectionCard className="stack">
+            <div className="section-header">
+              <div>
                 <h3>Encounters</h3>
                 <p>Listado descendente por fecha para ver la actividad clínica cuando el actor lo tiene habilitado.</p>
               </div>
@@ -553,6 +1021,67 @@ function sortEncounters(encounters: Encounter[]) {
     const rightTime = Date.parse(right.occurred_at) || Date.parse(right.created_at) || 0;
     return rightTime - leftTime;
   });
+}
+
+function sortPatientClinicalNotes(notes: PatientClinicalNote[]) {
+  return [...notes].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at) || Date.parse(left.updated_at) || 0;
+    const rightTime = Date.parse(right.created_at) || Date.parse(right.updated_at) || 0;
+    return rightTime - leftTime;
+  });
+}
+
+function clinicalHistoryToForm(history: ClinicalHistory): ClinicalHistoryFormState {
+  return {
+    weight_kg: numberToFormValue(history.weight_kg),
+    height_cm: numberToFormValue(history.height_cm),
+    antecedentes: history.antecedentes ?? '',
+    allergies: history.allergies ?? '',
+    habitual_medication: history.habitual_medication ?? '',
+    chronic_conditions: history.chronic_conditions ?? '',
+    habits: history.habits ?? '',
+    general_observations: history.general_observations ?? '',
+  };
+}
+
+function historyFormToPayload(form: ClinicalHistoryFormState): UpdateClinicalHistoryPayload | null {
+  const weight = numberFieldToPayload(form.weight_kg);
+  const height = numberFieldToPayload(form.height_cm);
+
+  if (weight === undefined || height === undefined) {
+    return null;
+  }
+
+  return {
+    weight_kg: weight,
+    height_cm: height,
+    antecedentes: normalizeNullableText(form.antecedentes),
+    allergies: normalizeNullableText(form.allergies),
+    habitual_medication: normalizeNullableText(form.habitual_medication),
+    chronic_conditions: normalizeNullableText(form.chronic_conditions),
+    habits: normalizeNullableText(form.habits),
+    general_observations: normalizeNullableText(form.general_observations),
+  };
+}
+
+function numberToFormValue(value: number | null) {
+  return value === null ? '' : String(value);
+}
+
+function numberFieldToPayload(value: string): number | null | undefined {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function normalizeNullableText(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function formatDate(value: string) {

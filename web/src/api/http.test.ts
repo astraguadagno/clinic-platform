@@ -80,6 +80,16 @@ describe('request auth headers', () => {
 
     expect(headers.has('Authorization')).toBe(false);
   });
+
+  it('allows authenticated DELETE requests that return no content', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await expect(request('/directory-api', '/patients/patient-1/clinical-notes/note-1', { method: 'DELETE', auth: true })).resolves.toBeUndefined();
+
+    const [, init] = fetchMock.mock.calls[0];
+
+    expect(init?.method).toBe('DELETE');
+  });
 });
 
 function jsonResponse(payload: unknown) {

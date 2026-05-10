@@ -1563,6 +1563,7 @@ components:
           type: string
           enum:
             - scheduled
+            - requested
             - checked_in
             - completed
             - cancelled
@@ -1573,6 +1574,7 @@ components:
             - online
             - secretary
             - doctor
+            - patient
         scheduled_start:
           type: string
           format: date-time
@@ -1623,6 +1625,7 @@ components:
             - online
             - secretary
             - doctor
+            - patient
         scheduled_start:
           type: string
           format: date-time
@@ -1655,6 +1658,7 @@ components:
           type: string
           enum:
             - scheduled
+            - requested
             - checked_in
             - completed
             - cancelled
@@ -1665,6 +1669,7 @@ components:
             - online
             - secretary
             - doctor
+            - patient
           nullable: true
           description: Optional immutable source echo; changing it is rejected.
         check_in_time:
