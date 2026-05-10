@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.5;
@@ -19,6 +23,13 @@
   --text-soft: #5f6b84;
   --text-muted: #667085;
   --primary: #2563eb;
+  --primary-strong: #0f766e;
+  --primary-glow: rgba(20, 184, 166, 0.18);
+  --clinical-blue: #1d4ed8;
+  --clinical-teal: #0f766e;
+  --clinical-mint: #dffcf4;
+  --clinical-amber: #a16207;
+  --clinical-rose: #9f1239;
   --primary-soft: #dbeafe;
   --success-bg: #dcfce7;
   --success-text: #166534;
@@ -28,6 +39,8 @@
   --warning-text: #9a3412;
   --shadow-soft: 0 12px 30px rgba(15, 23, 42, 0.06);
   --shadow-card: 0 10px 24px rgba(15, 23, 42, 0.05);
+  --shadow-clinical: 0 22px 52px rgba(15, 118, 110, 0.13);
+  --shadow-crisp: 0 1px 0 rgba(255, 255, 255, 0.82) inset, 0 18px 42px rgba(15, 23, 42, 0.08);
   --radius-lg: 20px;
   --radius-md: 16px;
   --radius-sm: 12px;
@@ -80,10 +93,7 @@ button {
 
 .page-app-shell {
   padding: 0;
-  background:
-    radial-gradient(circle at top left, rgba(254, 214, 91, 0.18), transparent 24%),
-    radial-gradient(circle at top right, rgba(128, 0, 0, 0.18), transparent 30%),
-    linear-gradient(180deg, #570000 0%, #800000 38%, #f3f3f3 38%, #f9f9f9 100%);
+  background: #f6f7f8;
 }
 
 .page-centered {
@@ -119,6 +129,85 @@ button {
 .foundation-empty-state {
   min-height: 180px;
   place-content: center;
+}
+
+.contextual-header {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(237, 244, 255, 0.82));
+  box-shadow: var(--shadow-card);
+}
+
+.contextual-header-operational {
+  border-color: rgba(115, 92, 0, 0.18);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 247, 237, 0.78));
+}
+
+.contextual-header-body,
+.contextual-header-meta,
+.contextual-header-feedback {
+  display: grid;
+  gap: 10px;
+}
+
+.contextual-header-title-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.contextual-header h2,
+.contextual-header p {
+  margin: 0;
+}
+
+.contextual-header h2 {
+  font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+}
+
+.contextual-header-meta,
+.contextual-header-feedback,
+.contextual-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.contextual-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 0;
+}
+
+.contextual-metadata-item {
+  display: grid;
+  gap: 2px;
+  min-width: 96px;
+}
+
+.contextual-metadata-item dt,
+.contextual-metadata-item dd {
+  margin: 0;
+}
+
+.contextual-metadata-item dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.contextual-metadata-item dd {
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 750;
 }
 
 .foundation-summary-tile {
@@ -1064,6 +1153,141 @@ button {
   gap: 12px;
 }
 
+.patients-main {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.35fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.patients-column {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.patients-profile-column {
+  position: sticky;
+  top: 18px;
+}
+
+.patients-section-summary,
+.patients-section-ficha,
+.patients-section-notes,
+.patients-section-evolutions,
+.patients-section-new-evolution {
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 253, 0.98) 100%);
+}
+
+.patients-section {
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.patients-section .section-header {
+  position: relative;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.patients-section .section-header::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 72px;
+  height: 2px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+.patients-section-ficha {
+  border-left: 4px solid rgba(37, 99, 235, 0.34);
+}
+
+.patients-section-ficha .section-header::before {
+  background: #2563eb;
+}
+
+.patients-section-notes {
+  border-left: 4px solid rgba(115, 92, 0, 0.34);
+}
+
+.patients-section-notes .section-header::before {
+  background: #735c00;
+}
+
+.patients-section-evolutions,
+.patients-section-new-evolution {
+  border-left: 4px solid rgba(87, 0, 0, 0.26);
+}
+
+.patients-section-evolutions .section-header::before,
+.patients-section-new-evolution .section-header::before {
+  background: #570000;
+}
+
+.patients-timeline-list {
+  position: relative;
+  padding-left: 18px;
+}
+
+.patients-timeline-list::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(87, 0, 0, 0.34), rgba(37, 99, 235, 0.16));
+}
+
+.patients-record-card {
+  position: relative;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.patients-evolution-card::before {
+  content: '';
+  position: absolute;
+  top: 24px;
+  left: -22px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #570000;
+  box-shadow: 0 0 0 3px rgba(87, 0, 0, 0.12);
+}
+
+.patients-note-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
+}
+
+.patients-note-card-linked {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: linear-gradient(180deg, #ffffff 0%, #f2f7ff 100%);
+}
+
+.patients-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 32, 42, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.patients-modal {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
 .encounter-card {
   display: grid;
   gap: 12px;
@@ -1475,323 +1699,7 @@ button {
   border-style: solid;
 }
 
-/* Corrective shell rewrite */
-
-.app-shell-surface-agenda {
-  --shell-accent: #60a5fa;
-}
-
-.app-shell-surface-patients {
-  --shell-accent: #34d399;
-}
-
-.app-shell-surface-directory {
-  --shell-accent: #c084fc;
-}
-
-.page-app-shell {
-  background:
-    radial-gradient(circle at 0 0, color-mix(in srgb, var(--shell-accent) 22%, transparent), transparent 24%),
-    linear-gradient(90deg, #07111f 0, #07111f min(26vw, 360px), #eef3f8 min(26vw, 360px), #f7f9fc 100%);
-}
-
-.app-shell-frame {
-  gap: 0;
-  padding: 0;
-}
-
-.app-shell-layout {
-  display: grid;
-  grid-template-columns: minmax(244px, 272px) minmax(0, 1fr);
-  min-height: 100vh;
-  width: 100%;
-  background: transparent;
-}
-
-.app-shell-rail {
-  display: grid;
-  align-content: start;
-  gap: 20px;
-  min-height: 100vh;
-  padding: 28px 20px 24px;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--shell-accent) 14%, transparent), transparent 28%),
-    linear-gradient(180deg, #09111d 0%, #0c1523 100%);
-  border-right: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.app-shell-rail-brand-block,
-.app-shell-nav,
-.app-shell-rail-footer,
-.app-shell-topbar,
-.app-shell-page-intro,
-.app-shell-stage-frame {
-  min-width: 0;
-}
-
-.app-shell-brand {
-  align-items: flex-start;
-}
-
-.app-shell-rail-brand-block {
-  gap: 12px;
-}
-
-.app-shell-brand-copy {
-  gap: 6px;
-}
-
-.app-shell-brand-wordmark {
-  font-size: 1.22rem;
-}
-
-.app-shell-rail-description,
-.app-shell-rail-account small,
-.app-shell-page-intro-copy p,
-.app-shell-topbar-context span {
-  margin: 0;
-  color: var(--shell-muted);
-}
-
-.app-shell-page-intro-copy h1,
-.app-shell-topbar-context strong,
-.app-shell-rail-account strong {
-  margin: 0;
-}
-
-.app-shell-nav {
-  display: grid;
-  gap: 10px;
-}
-
-.app-shell-nav-list {
-  gap: 8px;
-}
-
-.app-shell-nav-item {
-  min-height: 72px;
-  padding: 14px 14px 14px 12px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.025);
-  border-color: rgba(148, 163, 184, 0.1);
-}
-
-.app-shell-nav-item:hover {
-  transform: translateX(4px);
-  border-color: color-mix(in srgb, var(--shell-accent) 28%, rgba(148, 163, 184, 0.18));
-  background: rgba(255, 255, 255, 0.045);
-}
-
-.app-shell-nav-item.active {
-  border-color: color-mix(in srgb, var(--shell-accent) 38%, rgba(148, 163, 184, 0.18));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--shell-accent) 14%, rgba(255, 255, 255, 0.08)) 0%, rgba(255, 255, 255, 0.05) 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.app-shell-nav-item-marker {
-  width: 3px;
-  align-self: stretch;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.24);
-}
-
-.app-shell-nav-item.active .app-shell-nav-item-marker {
-  background: linear-gradient(180deg, #ffffff 0%, var(--shell-accent) 100%);
-}
-
-.app-shell-rail-footer {
-  display: grid;
-  gap: 10px;
-  margin-top: auto;
-  padding-top: 14px;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.app-shell-rail-account {
-  display: grid;
-  gap: 4px;
-  padding: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.app-shell-rail-account strong,
-.app-shell-topbar-context strong {
-  color: #f8fbff;
-}
-
-.app-shell-rail-logout {
-  width: 100%;
-  justify-content: center;
-  border-color: rgba(148, 163, 184, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: #f8fbff;
-}
-
-.app-shell-rail-logout:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.app-shell-column {
-  display: grid;
-  align-content: start;
-  gap: 24px;
-  min-width: 0;
-  padding: 0 28px 28px;
-  background:
-    linear-gradient(180deg, #eff3f8 0%, #f7f9fc 100%);
-}
-
-.app-shell-topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 18px;
-  padding: 20px 4px 18px;
-  border: 0;
-  border-bottom: 1px solid rgba(203, 213, 225, 0.92);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: blur(8px);
-}
-
-.app-shell-topbar-context {
-  gap: 4px;
-}
-
-.app-shell-topbar-meta,
-.app-shell-topbar-badges {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.app-shell-topbar-meta {
-  justify-content: flex-end;
-}
-
-.app-shell-topbar-account {
-  gap: 2px;
-  padding-right: 14px;
-  border-right: 1px solid rgba(203, 213, 225, 0.9);
-}
-
-.app-shell-topbar-account strong {
-  font-size: 0.95rem;
-  color: #0f172a;
-}
-
-.app-shell-topbar-badges .badge {
-  background: rgba(15, 23, 42, 0.04);
-  color: #334155;
-  border-color: rgba(148, 163, 184, 0.18);
-}
-
-.app-shell-page-intro {
-  display: grid;
-  gap: 8px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.app-shell-page-intro-copy {
-  gap: 10px;
-  max-width: 40rem;
-}
-
-.app-shell-page-intro-copy h1 {
-  font-size: clamp(2.5rem, 4vw, 4rem);
-  line-height: 0.94;
-  color: #0f172a;
-}
-
-.app-shell-page-intro-copy p {
-  max-width: 32rem;
-  color: #52607a;
-}
-
-.app-shell-stage {
-  min-width: 0;
-}
-
-.app-shell-stage-frame {
-  padding: 12px;
-  border: 1px solid rgba(87, 0, 0, 0.08);
-  border-radius: 30px;
-  background: rgba(249, 249, 249, 0.74);
-  box-shadow: 0 18px 40px rgba(26, 28, 28, 0.08);
-}
-
-.app-shell-body-stage {
-  min-height: min(70vh, 920px);
-  padding: 16px;
-  border: 1px solid rgba(87, 0, 0, 0.06);
-  border-radius: 22px;
-  background: rgba(249, 249, 249, 0.98);
-}
-
-.app-shell-rail {
-  background:
-    radial-gradient(circle at top left, rgba(254, 214, 91, 0.18), transparent 28%),
-    linear-gradient(180deg, rgba(87, 0, 0, 0.98) 0%, rgba(128, 0, 0, 0.96) 100%);
-  border-right: 1px solid rgba(254, 214, 91, 0.14);
-}
-
-.app-shell-column {
-  background: linear-gradient(180deg, #f3f3f3 0%, #f9f9f9 100%);
-}
-
-.app-shell-topbar {
-  border-bottom: 1px solid rgba(87, 0, 0, 0.12);
-}
-
-.app-shell-topbar-account {
-  border-right: 1px solid rgba(87, 0, 0, 0.14);
-}
-
-.app-shell-topbar-account strong,
-.app-shell-page-intro-copy h1 {
-  color: #570000;
-}
-
-.app-shell-page-intro-copy p,
-.app-shell-topbar-badges .badge,
-.app-shell-topbar-context span {
-  color: #6a5657;
-}
-
-.app-shell-topbar-badges .badge {
-  background: rgba(254, 214, 91, 0.16);
-  border-color: rgba(115, 92, 0, 0.12);
-}
-
-.app-shell-nav-item {
-  background: rgba(249, 249, 249, 0.05);
-}
-
-.app-shell-nav-item:hover {
-  background: rgba(254, 214, 91, 0.08);
-}
-
-.app-shell-nav-item.active {
-  background: linear-gradient(180deg, rgba(254, 214, 91, 0.18) 0%, rgba(249, 249, 249, 0.08) 100%);
-}
-
-.app-shell-nav-item.active .surface-tab-eyebrow,
-.app-shell-nav-item.active strong,
-.app-shell-rail-account strong {
-  color: #f9f9f9;
-}
-
-.app-shell-topbar-context strong {
-  color: #570000;
-}
+/* Authenticated shell and contextual patient workspace */
 
 .app-shell-surface-agenda {
   --shell-accent: #fed65b;
@@ -1805,10 +1713,517 @@ button {
   --shell-accent: #800000;
 }
 
+.page-app-shell {
+  padding: 0;
+  background: #f6f7f8;
+}
+
+/* Tailwind-independent fallback for the current authenticated shell. */
+.clinic-shell-layout,
+.clinic-shell-column,
+.clinic-shell-sidebar,
+.clinic-shell-topbar,
+.clinic-shell-stage {
+  min-width: 0;
+}
+
+.clinic-shell-layout {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(254, 214, 91, 0.18), transparent 30%),
+    linear-gradient(180deg, #f6f7f8 0%, #fbfaf8 100%);
+  color: #1f1a1a;
+}
+
+.clinic-shell-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 24px 20px;
+  border-bottom: 1px solid #ead0cb;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 40px rgba(31, 26, 26, 0.08);
+}
+
+.clinic-shell-sidebar .app-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.clinic-shell-sidebar .app-shell-brand-mark-image-wrap,
+.clinic-shell-sidebar .app-shell-brand-mark-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(31, 26, 26, 0.08);
+}
+
+.clinic-shell-sidebar .app-shell-brand-mark-image-wrap {
+  overflow: hidden;
+  border: 1px solid #ead0cb;
+  background: #ffffff;
+}
+
+.clinic-shell-sidebar .app-shell-brand-mark-fallback {
+  background: #ffdd91;
+  color: #560000;
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.clinic-shell-sidebar .app-shell-brand-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.clinic-shell-sidebar strong,
+.clinic-shell-topbar h1,
+.clinic-shell-account strong {
+  color: #1f1a1a;
+}
+
+.clinic-shell-primary-action,
+.clinic-shell-nav-button,
+.clinic-shell-help,
+.clinic-shell-logout,
+.clinic-shell-notification {
+  appearance: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.clinic-shell-primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 24px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #7a0000;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 850;
+  box-shadow: 0 18px 40px rgba(31, 26, 26, 0.08);
+}
+
+.clinic-shell-primary-action:hover,
+.clinic-shell-primary-action:focus-visible {
+  background: #560000;
+}
+
+.clinic-shell-sidebar nav {
+  flex: 1 1 auto;
+  margin-top: 28px;
+}
+
+.clinic-shell-nav-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clinic-shell-nav-list > li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clinic-shell-nav-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background: transparent;
+  color: #6f5f5f;
+  text-align: left;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.clinic-shell-nav-button:hover,
+.clinic-shell-nav-button:focus-visible {
+  border-color: #ead0cb;
+  background: #fff8eb;
+  color: #1f1a1a;
+}
+
+.clinic-shell-nav-button-active,
+.clinic-shell-nav-button[aria-pressed='true'] {
+  border-color: rgba(122, 0, 0, 0.2);
+  background: rgba(255, 221, 145, 0.78);
+  color: #560000;
+  box-shadow: 0 8px 18px rgba(31, 26, 26, 0.06);
+}
+
+.clinic-shell-nav-marker {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ead0cb;
+}
+
+.clinic-shell-nav-button[aria-pressed='true'] .clinic-shell-nav-marker {
+  background: #7a0000;
+}
+
+.clinic-shell-nav-button span,
+.clinic-shell-nav-button strong {
+  min-width: 0;
+}
+
+.clinic-shell-nav-button strong {
+  display: block;
+  overflow: hidden;
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clinic-shell-footer {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(234, 208, 203, 0.75);
+}
+
+.clinic-shell-help,
+.clinic-shell-logout {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: transparent;
+  text-align: left;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.clinic-shell-help {
+  color: #6f5f5f;
+}
+
+.clinic-shell-logout {
+  border: 1px solid #ead0cb;
+  background: #ffffff;
+  color: #7a0000;
+  font-weight: 850;
+}
+
+.clinic-shell-help:hover,
+.clinic-shell-logout:hover {
+  background: #fff8eb;
+}
+
+.clinic-shell-column {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f6f7f8 0%, #fbfaf8 100%);
+}
+
+.clinic-shell-topbar {
+  z-index: 20;
+  padding: 16px 20px;
+  border-bottom: 1px solid #ead0cb;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 34px rgba(87, 0, 0, 0.05);
+  backdrop-filter: blur(16px);
+}
+
+.clinic-shell-topbar-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.clinic-shell-topbar-title {
+  min-width: 0;
+}
+
+.clinic-shell-topbar-title h1 {
+  overflow: hidden;
+  margin: 0;
+  font-size: clamp(1.45rem, 2.2vw, 1.8rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clinic-shell-search {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 576px;
+}
+
+.clinic-shell-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  color: #6f5f5f;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.clinic-shell-search-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 16px 0 40px;
+  border: 1px solid #ead0cb;
+  border-radius: 18px;
+  outline: none;
+  background: #fdfaf5;
+  color: #1f1a1a;
+}
+
+.clinic-shell-search-input:focus {
+  border-color: #7a0000;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(122, 0, 0, 0.12);
+}
+
+.clinic-shell-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.clinic-shell-notification {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #ead0cb;
+  border-radius: 18px;
+  background: #ffffff;
+  color: #7a0000;
+  box-shadow: 0 8px 18px rgba(31, 26, 26, 0.06);
+}
+
+.clinic-shell-notification:hover,
+.clinic-shell-notification:focus-visible {
+  background: #fff8eb;
+}
+
+.clinic-shell-notification-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #7a0000;
+}
+
+.clinic-shell-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid #ead0cb;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(31, 26, 26, 0.06);
+}
+
+.clinic-shell-account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: #7a0000;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.clinic-shell-account-summary {
+  display: block;
+  min-width: 0;
+}
+
+.clinic-shell-account-summary strong,
+.clinic-shell-account-summary span {
+  display: block;
+  overflow: hidden;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clinic-shell-account-summary span {
+  color: #6f5f5f;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.clinic-shell-stage {
+  padding: 24px 20px;
+}
+
+.clinic-shell-stage .app-shell-body-stage {
+  min-height: calc(100vh - 128px);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (min-width: 768px) {
+  .clinic-shell-layout {
+    padding-left: var(--shell-sidebar-width);
+  }
+
+  .clinic-shell-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: var(--shell-sidebar-width);
+    border-right: 1px solid #ead0cb;
+    border-bottom: 0;
+  }
+
+  .clinic-shell-topbar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: var(--shell-sidebar-width);
+    height: 80px;
+    padding: 16px 32px;
+  }
+
+  .clinic-shell-topbar-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 100%;
+  }
+
+  .clinic-shell-search {
+    flex: 1 1 320px;
+  }
+
+  .clinic-shell-stage {
+    padding: 112px 32px 40px;
+  }
+}
+
+@media (max-width: 767px) {
+  .clinic-shell-account-summary {
+    display: none;
+  }
+}
+
+.contextual-header {
+  padding: 24px;
+  border-color: rgba(96, 80, 67, 0.12);
+  background: linear-gradient(135deg, #ffffff 0%, #fcfaf7 58%, #f3ede7 100%);
+  box-shadow: 0 14px 34px rgba(87, 0, 0, 0.045);
+}
+
+.contextual-header-title-row {
+  align-items: center;
+  gap: 18px;
+}
+
+.contextual-header h2 {
+  font-size: clamp(1.65rem, 3vw, 2.55rem);
+  color: #4a1f1b;
+}
+
+.contextual-header .hero-kicker,
+.contextual-header .field label,
+.field label {
+  color: rgba(87, 0, 0, 0.68);
+}
+
+.contextual-header-actions {
+  flex: 1 1 460px;
+  justify-content: flex-end;
+}
+
+.patient-header-actions {
+  display: flex;
+  flex: 1 1 520px;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.patient-header-search {
+  flex: 1 1 300px;
+  max-width: 430px;
+}
+
+.patient-header-search input {
+  border-color: rgba(87, 0, 0, 0.12);
+  border-radius: 16px;
+  background: #fffdfb;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.patient-header-search input:focus {
+  border-color: rgba(128, 0, 0, 0.28);
+  box-shadow: 0 0 0 4px rgba(128, 0, 0, 0.08);
+}
+
+.patient-search-dropdown {
+  border-color: rgba(87, 0, 0, 0.14);
+  box-shadow: 0 24px 54px rgba(87, 0, 0, 0.14);
+}
+
+.patient-new-note-button,
+.patient-header-refresh {
+  min-height: 52px;
+}
+
+.patient-new-note-button {
+  padding-inline: 20px;
+  font-size: 1rem;
+}
+
+.patient-context-message {
+  margin-top: -4px;
+}
+
+.patient-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -8px;
+}
+
+/* Responsive shell/layout rules */
+
 @media (max-width: 980px) {
-  .app-shell-layout,
-  .app-shell-workspace,
   .layout,
+  .patients-main,
   .patients-workspace-grid,
   .directory-grid,
   .hero-summary-grid,
@@ -1820,40 +2235,29 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .app-shell-topbar-meta {
-    justify-content: stretch;
+  .page-app-shell,
+  .clinic-shell-column {
+    background: #fbfaf8;
   }
 
-  .app-shell-topbar-account {
-    padding-right: 0;
-    border-right: 0;
-  }
-
-  .app-shell-sidebar,
-  .app-shell-rail {
+  .schedule-sidebar,
+  .patients-sidebar,
+  .patients-profile-column {
     position: static;
   }
+}
 
-  .app-shell-layout {
-    min-height: auto;
+@media (max-width: 760px) {
+  .contextual-header-title-row,
+  .patient-header-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  .app-shell-rail {
-    min-height: auto;
-    border-right: 0;
-    border-bottom: 1px solid rgba(254, 214, 91, 0.14);
-  }
-
-  .app-shell-column {
-    padding: 0 24px 24px;
-  }
-
-  .schedule-sidebar {
-    position: static;
-  }
-
-  .patients-sidebar {
-    position: static;
+  .contextual-header-actions,
+  .patient-header-search {
+    width: 100%;
+    max-width: none;
   }
 }
 
@@ -1866,29 +2270,12 @@ button {
     padding: 0;
   }
 
-  .app-shell-topbar,
-  .app-shell-page-intro,
-  .app-shell-surface-intro-head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .app-shell-surface-frame {
-    padding: 24px;
-  }
-
-  .app-shell-topbar-meta,
-  .app-shell-surface-meta {
-    justify-content: flex-start;
-  }
-
   .card,
   .schedule-hero {
     padding: 20px;
   }
 
   .surface-switcher-header,
-  .app-shell-nav-header,
   .section-header,
   .schedule-controls-head,
   .schedule-controls-toolbar {
@@ -1898,19 +2285,6 @@ button {
 }
 
 @media (max-width: 560px) {
-  .app-shell-rail,
-  .app-shell-column,
-  .app-shell-topbar,
-  .app-shell-page-intro,
-  .app-shell-stage-frame {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  .app-shell-account {
-    min-width: 0;
-  }
-
   .form-grid,
   .time-grid,
   .schedule-stat-grid,
@@ -1922,16 +2296,9 @@ button {
   }
 
   .hero-product h1,
-  .app-shell-header h1,
   .section-hero-card h1,
-  .app-shell-surface-frame h2,
   .section-hero-card h2 {
     font-size: 1.8rem;
-  }
-
-  .app-shell-body-stage,
-  .app-shell-surface-content {
-    padding: 6px;
   }
 
   .schedule-week-header,

@@ -84,7 +84,7 @@ describe('App actor-aware shell', () => {
   it('shows agenda, weekly schedule and patients for doctors, defaulting to agenda', () => {
     useAuthSessionMock.mockReturnValue(authSession({ role: 'doctor', professional_id: 'professional-1' }));
 
-    const { container } = render(<App />);
+    render(<App />);
 
     expect(screen.getAllByText('Centro operativo clínico').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Amicus')).toBeInTheDocument();
@@ -100,14 +100,11 @@ describe('App actor-aware shell', () => {
     expect(doctorNavButtons[0]).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('schedule:doctor-own')).toBeInTheDocument();
 
-    const shellPage = container.querySelector('.page-app-shell');
-    expect(shellPage?.firstElementChild).toHaveClass('app-shell-layout');
-    expect(container.querySelector('.app-shell-frame')).not.toBeInTheDocument();
-    expect(container.querySelector('.app-shell-column > .app-shell-topbar')).toBeInTheDocument();
-    expect(container.querySelector('.app-shell-column > .app-shell-page-intro')).toBeInTheDocument();
-    expect(container.querySelector('.app-shell-column > .app-shell-stage')).toBeInTheDocument();
-    expect(container.querySelector('.app-shell-brand-image')).not.toBeInTheDocument();
-    expect(container.querySelector('.app-shell-brand-mark-fallback')).toHaveTextContent('A');
+    expect(screen.getByRole('region', { name: 'Contenido de Agenda' })).toContainElement(screen.getByText('schedule:doctor-own'));
+    expect(screen.getByPlaceholderText('Buscar paciente por nombre o DNI...')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Crear nuevo turno' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Abrir notificaciones' })).toBeInTheDocument();
+    expect(screen.getByText('doctor')).toBeInTheDocument();
   });
 
   it('shows agenda, weekly schedule and patients for secretaries without directory shell symmetry', () => {

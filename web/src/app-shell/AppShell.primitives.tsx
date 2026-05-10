@@ -15,6 +15,17 @@ type EmptyStateProps = {
   className?: string;
 };
 
+export type ContextualHeaderProps = {
+  eyebrow: string;
+  title: ReactNode;
+  description?: ReactNode;
+  meta?: ReactNode;
+  actions?: ReactNode;
+  feedback?: ReactNode;
+  tone?: 'neutral' | 'clinical' | 'operational';
+  className?: string;
+};
+
 export function PageContainer({ as, className, children, ...props }: PrimitiveProps<ElementType>) {
   return renderPrimitive(as ?? 'div', joinClasses('foundation-page-container', className), children, props);
 }
@@ -47,6 +58,23 @@ export function EmptyState({ eyebrow, title, description, className }: EmptyStat
 
 export function ActionBar({ as, className, children, ...props }: PrimitiveProps<ElementType>) {
   return renderPrimitive(as ?? 'div', joinClasses('foundation-action-bar', className), children, props);
+}
+
+export function ContextualHeader({ eyebrow, title, description, meta, actions, feedback, tone = 'neutral', className }: ContextualHeaderProps) {
+  return (
+    <section className={joinClasses('contextual-header', `contextual-header-${tone}`, className)} aria-label={eyebrow}>
+      <div className="contextual-header-body">
+        <span className="hero-kicker">{eyebrow}</span>
+        <div className="contextual-header-title-row">
+          <h2>{title}</h2>
+          {actions ? <div className="contextual-header-actions">{actions}</div> : null}
+        </div>
+        {description ? <p>{description}</p> : null}
+        {meta ? <div className="contextual-header-meta">{meta}</div> : null}
+      </div>
+      {feedback ? <div className="contextual-header-feedback">{feedback}</div> : null}
+    </section>
+  );
 }
 
 export function SummaryTile({ as, className, children, ...props }: PrimitiveProps<ElementType>) {

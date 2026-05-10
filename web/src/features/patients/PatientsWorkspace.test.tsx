@@ -55,13 +55,135 @@ describe('PatientsWorkspace', () => {
     listPatientClinicalNotesMock.mockResolvedValue({ items: [] });
   });
 
+  it('promotes the selected patient search and note action into the contextual workspace header', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
+    listPatientClinicalNotesMock.mockResolvedValue({ items: [patientClinicalNote()] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    const contextHeader = await screen.findByRole('region', { name: /contexto del paciente/i });
+    const searchControl = within(contextHeader).getByRole('group', { name: /buscador de pacientes/i });
+
+    expect(within(searchControl).getByRole('searchbox', { name: /buscar paciente/i })).toBeInTheDocument();
+    expect(within(contextHeader).getByRole('button', { name: /^\+ Nueva nota$/i })).toHaveAttribute('title', 'Nueva nota');
+    expect(within(contextHeader).getByRole('heading', { name: /Juan Pérez/i })).toBeInTheDocument();
+    expect(within(contextHeader).getByText('Documento')).toBeInTheDocument();
+    expect(within(contextHeader).getByText('12345678')).toBeInTheDocument();
+    expect(within(contextHeader).getByText('Ficha')).toBeInTheDocument();
+    expect(within(contextHeader).getByText('Editable')).toBeInTheDocument();
+    const evolutionsFact = (await within(contextHeader).findByText('Evoluciones')).parentElement;
+    const notesFact = within(contextHeader).getByText('Notas clínicas').parentElement;
+    await waitFor(() => expect(evolutionsFact).toHaveTextContent('1'));
+    expect(notesFact).toHaveTextContent('1');
+  });
+
+  it('keeps search with patient metadata visible', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    expect(await screen.findByText(/pacientes activos/i)).toBeInTheDocument();
+    expect(screen.getByText(/modo clínico habilitado/i)).toBeInTheDocument();
+  });
+
+  it('keeps the search dropdown anchored inside the contextual header action area', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient(), secondPatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    const contextHeader = await screen.findByRole('region', { name: /contexto del paciente/i });
+    const searchControl = within(contextHeader).getByRole('group', { name: /buscador de pacientes/i });
+    const searchInput = within(searchControl).getByRole('searchbox', { name: /buscar paciente/i });
+
+    expect(document.querySelector('.patient-search-surface')).not.toBeInTheDocument();
+    expect(within(searchControl).queryByRole('listbox', { name: /resultados de búsqueda de pacientes/i })).not.toBeInTheDocument();
+
+    fireEvent.focus(searchInput);
+
+    const resultsList = await within(searchControl).findByRole('listbox', { name: /resultados de búsqueda de pacientes/i });
+    expect(resultsList).toBeInTheDocument();
+    expect(within(resultsList).getByRole('option', { name: /Juan Pérez/i })).toBeInTheDocument();
+    expect(within(resultsList).getByRole('option', { name: /María Gómez/i })).toBeInTheDocument();
+  });
+
+  it('renders patient context facts as compact metadata instead of loud status bubbles', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
+    listPatientClinicalNotesMock.mockResolvedValue({ items: [patientClinicalNote()] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    const contextHeader = await screen.findByRole('region', { name: /contexto del paciente/i });
+
+    expect(within(contextHeader).getByText('Documento')).toBeInTheDocument();
+    expect(within(contextHeader).getByText('12345678')).toBeInTheDocument();
+    expect(within(contextHeader).getByText('Ficha')).toBeInTheDocument();
+    expect(within(contextHeader).getByText('Editable')).toBeInTheDocument();
+    expect(within(contextHeader).queryByText(/ficha clínica editable/i)).not.toBeInTheDocument();
+    expect(within(contextHeader).queryByText(/modo clínico habilitado/i)).not.toBeInTheDocument();
+  });
+
+  it('renders an empty contextual header without implying an active clinical record', async () => {
+    listPatientsMock.mockResolvedValue({ items: [] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'secretary-operational' }} onSessionInvalid={vi.fn()} />);
+
+    const contextHeader = await screen.findByRole('region', { name: /contexto del paciente/i });
+
+    expect(within(contextHeader).getByRole('heading', { name: /Seleccioná un paciente/i })).toBeInTheDocument();
+    expect(within(contextHeader).getByText(/sin paciente seleccionado/i)).toBeInTheDocument();
+    expect(within(contextHeader).queryByText(/ficha clínica editable/i)).not.toBeInTheDocument();
+  });
+
+  it('separates ficha clínica, consultation-linked notes, and evolutions as distinct clinical concepts', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
+    listPatientClinicalNotesMock.mockResolvedValue({ items: [patientClinicalNote()] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    const fichaSection = await screen.findByRole('region', { name: /ficha del paciente/i });
+    const timelineSection = await screen.findByRole('region', { name: /historial clínico/i });
+
+    expect(fichaSection.compareDocumentPosition(timelineSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(fichaSection).getByText(/ficha clínica persistente/i)).toBeInTheDocument();
+    expect(within(timelineSection).getByText(/Vinculada a consulta/i)).toBeInTheDocument();
+    expect(within(timelineSection).queryByText(/consultation-1|professional-1|patient-1/i)).not.toBeInTheDocument();
+    expect(within(timelineSection).getByText('Control inicial')).toBeInTheDocument();
+  });
+
+  it('composes the selected patient workspace as ficha first and chronological history second', async () => {
+    listPatientsMock.mockResolvedValue({ items: [activePatient()] });
+    listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
+    listPatientClinicalNotesMock.mockResolvedValue({ items: [patientClinicalNote()] });
+
+    render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
+
+    const fichaSection = await screen.findByRole('region', { name: /ficha del paciente/i });
+    const timelineSection = await screen.findByRole('region', { name: /historial clínico/i });
+
+    expect(fichaSection.compareDocumentPosition(timelineSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('region', { name: /resumen del paciente/i })).not.toBeInTheDocument();
+    expect(within(fichaSection).getByText(/Juan Pérez/i)).toBeInTheDocument();
+    expect(within(timelineSection).getByText(/vinculada a consulta/i)).toBeInTheDocument();
+
+    const clinicalNote = within(timelineSection).getByText('Control de alergias actualizado').closest('article');
+    const evolution = within(timelineSection).getByText('Control inicial').closest('article');
+
+    expect(clinicalNote?.closest('.patients-timeline-list')).toBeInTheDocument();
+    expect(evolution?.closest('.patients-timeline-list')).toBeInTheDocument();
+  });
+
   it('shows doctor clinical data when mode allows encounters', async () => {
     listPatientsMock.mockResolvedValue({ items: [activePatient()] });
     listPatientEncountersMock.mockResolvedValue({ items: [encounter()] });
 
     render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
 
-    expect(await screen.findByText(/modo clínico habilitado/i)).toBeInTheDocument();
+    expect(await screen.findByText(/ficha clínica y evolución histórica/i)).toBeInTheDocument();
     expect(await screen.findByText('Control inicial')).toBeInTheDocument();
     expect(await screen.findByDisplayValue('Penicilina')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^guardar nota$/i })).toBeEnabled();
@@ -74,7 +196,7 @@ describe('PatientsWorkspace', () => {
 
     render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
 
-    const allergiesInput = await screen.findByLabelText(/alergias/i);
+    const allergiesInput = await screen.findByDisplayValue('Penicilina');
     const weightInput = await screen.findByLabelText(/peso/i);
 
     fireEvent.change(allergiesInput, { target: { value: 'Penicilina y dipirona' } });
@@ -184,7 +306,7 @@ describe('PatientsWorkspace', () => {
     expect(screen.queryByText('Nota tardía de Juan')).not.toBeInTheDocument();
   });
 
-  it('lets doctors create, edit, and delete standalone patient notes with optional consultation id', async () => {
+  it('opens note creation in a modal action and lets doctors create, edit, and delete standalone patient notes', async () => {
     listPatientsMock.mockResolvedValue({ items: [activePatient()] });
     listPatientEncountersMock.mockResolvedValue({ items: [] });
     listPatientClinicalNotesMock.mockResolvedValue({ items: [patientClinicalNote()] });
@@ -195,13 +317,20 @@ describe('PatientsWorkspace', () => {
     render(<PatientsWorkspace patientsMode={{ kind: 'doctor-clinical', professionalId: 'professional-1' }} onSessionInvalid={vi.fn()} />);
 
     expect(await screen.findByText('Control de alergias actualizado')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /nueva nota clínica/i })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/nueva nota clínica/i), { target: { value: 'Nueva nota suelta' } });
-    fireEvent.change(screen.getByLabelText(/consulta asociada/i), { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: /guardar nota clínica/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^\+ nueva nota$/i }));
 
+    const noteDialog = await screen.findByRole('dialog', { name: /nueva nota clínica/i });
+    fireEvent.change(screen.getByLabelText(/contenido de la nota clínica/i), { target: { value: 'Nueva nota suelta' } });
+    fireEvent.change(screen.getByLabelText(/identificador de consulta/i), { target: { value: '   ' } });
+    fireEvent.click(within(noteDialog).getByRole('button', { name: /guardar nota clínica/i }));
+
+    await waitFor(() => {
+      expect(createPatientClinicalNoteMock).toHaveBeenCalledWith('patient-1', { content: 'Nueva nota suelta', consultation_id: null });
+    });
     expect(await screen.findByText('Nueva nota suelta')).toBeInTheDocument();
-    expect(createPatientClinicalNoteMock).toHaveBeenCalledWith('patient-1', { content: 'Nueva nota suelta', consultation_id: null });
+    expect(screen.queryByRole('dialog', { name: /nueva nota clínica/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole('button', { name: /editar nota clínica/i })[0]);
     fireEvent.change(screen.getByLabelText(/editar contenido de nota clínica/i), { target: { value: 'Nota corregida' } });
@@ -225,8 +354,8 @@ describe('PatientsWorkspace', () => {
 
     render(<PatientsWorkspace patientsMode={{ kind: 'secretary-operational' }} onSessionInvalid={vi.fn()} />);
 
-    expect(await screen.findByText(/modo operativo sin clinical encounters/i)).toBeInTheDocument();
-    expect(screen.getByText(/encounters clínicos bloqueados/i)).toBeInTheDocument();
+    expect(await screen.findByText(/datos operativos del paciente/i)).toBeInTheDocument();
+    expect(screen.getByText(/evoluciones bloqueadas/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /guardar nota/i })).not.toBeInTheDocument();
     expect(screen.getByText(/trabajo clínico oculto para secretaría/i)).toBeInTheDocument();
     expect(listPatientEncountersMock).not.toHaveBeenCalled();
@@ -372,17 +501,17 @@ describe('PatientsWorkspace', () => {
     fireEvent.focus(searchInput);
     fireEvent.click(await screen.findByRole('option', { name: /María Gómez/i }));
 
-    expect(screen.getByText(/^Paciente$/i)).toBeInTheDocument();
-    expect(screen.getByText('María Gómez')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /María Gómez/i })).toBeInTheDocument();
+    expect(screen.getAllByText('María Gómez').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /actualizar/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
+      expect(screen.getAllByText('Juan Pérez').length).toBeGreaterThan(0);
     });
 
     expect(screen.queryByText('María Gómez')).not.toBeInTheDocument();
-    expect(screen.getByText(/Pacientes activos: 1/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Juan Pérez/i })).toBeInTheDocument();
 
     fireEvent.focus(searchInput);
 
@@ -498,7 +627,7 @@ function patientClinicalNoteBase() {
     id: 'note-1',
     patient_id: 'patient-1',
     professional_id: 'professional-1',
-    consultation_id: 'consultation-1',
+    consultation_id: 'consultation-1' as string | null,
     kind: 'standalone',
     content: 'Control de alergias actualizado',
     created_at: '2026-01-03T10:00:00Z',

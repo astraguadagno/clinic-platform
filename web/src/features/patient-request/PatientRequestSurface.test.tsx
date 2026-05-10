@@ -2,6 +2,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PatientRequestSurface } from './PatientRequestSurface';
 
+function currentOperationalWeekStartForTest() {
+  const today = new Date();
+  const day = today.getDay() === 0 ? 7 : today.getDay();
+  const monday = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() - day + 1));
+  return monday.toISOString().slice(0, 10);
+}
+
 const { createPatientRequestMock, listPublicAvailabilityMock, listPublicProfessionalsMock } = vi.hoisted(() => ({
   createPatientRequestMock: vi.fn(),
   listPublicAvailabilityMock: vi.fn(),
@@ -69,7 +76,7 @@ describe('PatientRequestSurface', () => {
     await waitFor(() => {
       expect(listPublicAvailabilityMock).toHaveBeenCalledWith({
         professional_id: 'professional-1',
-        week_start: '2026-04-27',
+        week_start: currentOperationalWeekStartForTest(),
       });
     });
     fireEvent.click(await screen.findByRole('button', { name: /lun 27\/04, 14:00/ }));
