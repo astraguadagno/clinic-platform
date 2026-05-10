@@ -191,6 +191,8 @@ function buildDaySummary(slots: Slot[], appointments: ScheduleBoardAppointment[]
 
 function consultationStatusLabel(status: Consultation['status']) {
 	switch (status) {
+		case 'requested':
+			return 'Solicitado';
 		case 'scheduled':
 			return 'Reservado';
 		case 'checked_in':

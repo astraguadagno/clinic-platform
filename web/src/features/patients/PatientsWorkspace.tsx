@@ -91,6 +91,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
   const [clinicalNoteFormError, setClinicalNoteFormError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isClinicalNoteDialogOpen, setIsClinicalNoteDialogOpen] = useState(false);
   const searchControlRef = useRef<HTMLDivElement | null>(null);
   const clinicalHistoryRequestRef = useRef(0);
   const clinicalNotesRequestRef = useRef(0);
@@ -112,7 +113,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
   const isSecretaryOperational = patientsMode.kind === 'secretary-operational';
   const clinicalDeniedMessage =
     patientsMode.kind === 'secretary-operational'
-      ? 'Este perfil secretaría puede buscar y seleccionar pacientes, pero no ver ni registrar encounters clínicos.'
+      ? 'Este perfil secretaría puede buscar y seleccionar pacientes, pero no ver ni registrar información clínica.'
       : patientsMode.kind === 'forbidden'
         ? patientsMode.message
         : '';
@@ -121,9 +122,9 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
     : 'Seleccioná un paciente';
   const patientContextDescription = selectedPatient
     ? canAccessClinical
-      ? 'Contexto clínico del paciente seleccionado; la ficha, notas y evoluciones se mantienen separadas.'
-      : 'Contexto operativo del paciente seleccionado; el trabajo clínico permanece bloqueado para este actor.'
-    : 'Usá el buscador para elegir un paciente antes de abrir una ficha clínica activa.';
+      ? 'Ficha clínica y evolución histórica.'
+      : 'Datos operativos del paciente.'
+    : 'Buscá y seleccioná un paciente para comenzar.';
 
   const resolveViewError = useCallback(
     (error: unknown, fallbackMessage: string, forbiddenFallbackMessage: string) => {
@@ -470,6 +471,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
       });
       setPatientClinicalNotes((current) => sortPatientClinicalNotes([note, ...current]));
       setClinicalNoteForm(EMPTY_NOTE_FORM);
+      setIsClinicalNoteDialogOpen(false);
       setSuccessMessage('Nota clínica guardada correctamente.');
     } catch (error) {
       const nextError = resolveViewError(
@@ -553,6 +555,109 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
     setIsSearchOpen(false);
   }
 
+  function closeClinicalNoteDialog() {
+    setIsClinicalNoteDialogOpen(false);
+    setClinicalNoteFormError('');
+  }
+
+  const patientSearchAction = (
+    <div className="patient-header-actions">
+      <div
+        ref={searchControlRef}
+        className="field patient-search-combobox patient-header-search"
+        role="group"
+        aria-label="Buscador de pacientes"
+        onFocus={() => setIsSearchOpen(true)}
+        onBlur={handleSearchBlur}
+      >
+        <label htmlFor="patients-sidebar-search">Buscar paciente</label>
+        <input
+          id="patients-sidebar-search"
+          type="search"
+          value={sidebarQuery}
+          onChange={(event) => {
+            setSidebarQuery(event.target.value);
+            setIsSearchOpen(true);
+          }}
+          placeholder="Nombre o documento"
+          disabled={isBootstrapping || activePatients.length === 0}
+          autoComplete="off"
+          aria-controls="patients-search-results"
+          aria-autocomplete="list"
+          aria-expanded={shouldShowSearchDropdown}
+          aria-haspopup="listbox"
+        />
+
+        {shouldShowSearchDropdown ? (
+          <div className="patient-search-dropdown" aria-live="polite">
+            {filteredPatients.length === 0 ? (
+              <div id="patients-search-results" className="empty-state empty-state-soft patient-search-feedback" role="status">
+                <strong>No hay pacientes que coincidan con “{sidebarQuery.trim()}”.</strong>
+                <span>Limpiá el buscador para ver la lista completa.</span>
+              </div>
+            ) : (
+              <>
+                <div className="patient-search-feedback inline-note">
+                  <strong>
+                    {hasActiveSearchQuery
+                      ? `${filteredPatients.length} coincidencia${filteredPatients.length === 1 ? '' : 's'} visible${filteredPatients.length === 1 ? '' : 's'}`
+                      : `Pacientes activos disponibles: ${filteredPatients.length}`}
+                  </strong>
+                </div>
+
+                <ul id="patients-search-results" className="list compact-list patient-selector-list patient-search-results" role="listbox" aria-label="Resultados de búsqueda de pacientes">
+                  {filteredPatients.map((patient) => {
+                    const isSelected = patient.id === selectedPatientId;
+
+                    return (
+                      <li key={patient.id}>
+                        <button
+                          className={`patient-selector-card${isSelected ? ' selected' : ''}`}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handlePatientSelection(patient.id)}
+                        >
+                          <strong>
+                            {patient.first_name} {patient.last_name}
+                          </strong>
+                          <small>Documento {patient.document}</small>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      <button className="button secondary patient-header-refresh" type="button" onClick={() => void bootstrap()} disabled={isBootstrapping}>
+        {isBootstrapping ? 'Actualizando...' : 'Actualizar'}
+      </button>
+
+      {canAccessClinical && selectedPatient ? (
+        <button className="button patient-new-note-button" type="button" title="Nueva nota" onClick={() => setIsClinicalNoteDialogOpen(true)}>
+          + Nueva nota
+        </button>
+      ) : null}
+    </div>
+  );
+
+  const patientContextFeedback = (
+    <>
+      <span className="badge neutral">Pacientes activos: {activePatients.length}</span>
+      <span className="badge neutral">Encounters visibles: {encounters.length}</span>
+      <span className={`badge ${canAccessClinical ? 'info' : 'neutral'}`}>
+        {canAccessClinical ? 'Modo clínico habilitado' : 'Modo operativo sin clinical encounters'}
+      </span>
+      {successMessage ? <span className="badge success">{successMessage}</span> : null}
+      {patientsError ? <span className="badge error">{patientsError}</span> : null}
+    </>
+  );
+
   if (patientsMode.kind === 'forbidden') {
     return (
       <PageContainer>
@@ -563,208 +668,73 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
 
   return (
     <PageContainer className="stack">
-      <SectionCard className="stack patient-search-surface">
-        <div className="status-bar">
-          <span className="badge neutral">Pacientes activos: {activePatients.length}</span>
-          <span className="badge neutral">Encounters visibles: {encounters.length}</span>
-          <span className={`badge ${canAccessClinical ? 'info' : 'neutral'}`}>
-            {canAccessClinical ? 'Modo clínico habilitado' : 'Modo operativo sin clinical encounters'}
-          </span>
-          {successMessage ? <span className="badge success">{successMessage}</span> : null}
-          {patientsError ? <span className="badge error">{patientsError}</span> : null}
-        </div>
-        <div className="stack" role="group" aria-label="Buscador de pacientes">
-          <div className="section-header">
-            <div
-              ref={searchControlRef}
-              className="field patient-search-combobox"
-              style={{ flex: 1 }}
-              onFocus={() => setIsSearchOpen(true)}
-              onBlur={handleSearchBlur}
-            >
-              <label htmlFor="patients-sidebar-search">Buscar paciente</label>
-              <input
-                id="patients-sidebar-search"
-                type="search"
-                value={sidebarQuery}
-                onChange={(event) => {
-                  setSidebarQuery(event.target.value);
-                  setIsSearchOpen(true);
-                }}
-                placeholder="Nombre o documento"
-                disabled={isBootstrapping || activePatients.length === 0}
-                autoComplete="off"
-                aria-controls="patients-search-results"
-                aria-autocomplete="list"
-                aria-expanded={shouldShowSearchDropdown}
-                aria-haspopup="listbox"
-              />
-
-              {shouldShowSearchDropdown ? (
-                <div className="patient-search-dropdown" aria-live="polite">
-                  {filteredPatients.length === 0 ? (
-                    <div id="patients-search-results" className="empty-state empty-state-soft patient-search-feedback" role="status">
-                      <strong>No hay pacientes que coincidan con “{sidebarQuery.trim()}”.</strong>
-                      <span>Limpiá el buscador para ver la lista completa.</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="patient-search-feedback inline-note">
-                        <strong>
-                          {hasActiveSearchQuery
-                            ? `${filteredPatients.length} coincidencia${filteredPatients.length === 1 ? '' : 's'} visible${filteredPatients.length === 1 ? '' : 's'}`
-                            : `Pacientes activos disponibles: ${filteredPatients.length}`}
-                        </strong>
-                      </div>
-
-                      <ul id="patients-search-results" className="list compact-list patient-selector-list patient-search-results" role="listbox" aria-label="Resultados de búsqueda de pacientes">
-                        {filteredPatients.map((patient) => {
-                          const isSelected = patient.id === selectedPatientId;
-
-                          return (
-                            <li key={patient.id}>
-                              <button
-                                className={`patient-selector-card${isSelected ? ' selected' : ''}`}
-                                type="button"
-                                role="option"
-                                aria-selected={isSelected}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => handlePatientSelection(patient.id)}
-                              >
-                                <strong>
-                                  {patient.first_name} {patient.last_name}
-                                </strong>
-                                <small>Documento {patient.document}</small>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            <button className="button secondary" type="button" onClick={() => void bootstrap()} disabled={isBootstrapping}>
-              {isBootstrapping ? 'Actualizando...' : 'Actualizar'}
-            </button>
-          </div>
-
-          {isBootstrapping ? (
-            <div className="empty-state empty-state-soft">Cargando pacientes...</div>
-          ) : activePatients.length === 0 ? (
-            <div className="empty-state">
-              <strong>No hay pacientes activos</strong>
-              <span>Cargalos desde Directorio para que esta vista tenga casos reales de demo.</span>
-              {isSecretaryOperational && onOpenDirectorySupport ? (
-                <button className="button secondary" type="button" onClick={onOpenDirectorySupport}>
-                  Abrir soporte de directorio
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <>
-              {isSelectedPatientHiddenByFilter ? (
-                <div className="inline-note" aria-live="polite">
-                  <strong>Tenés seleccionado a {selectedPatient?.first_name} {selectedPatient?.last_name}; el filtro actual lo ocultó de la lista.</strong>
-                </div>
-              ) : null}
-
-              {!shouldShowSearchDropdown && hasActiveSearchQuery && filteredPatients.length === 0 ? (
-                <div className="inline-note" aria-live="polite">
-                  <strong>No hay resultados visibles para el filtro actual.</strong>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </SectionCard>
-
       <ContextualHeader
         eyebrow="Contexto del paciente"
         tone={canAccessClinical ? 'clinical' : 'operational'}
         title={patientContextTitle}
         description={patientContextDescription}
+        actions={patientSearchAction}
         meta={(
-          <>
-            <span className="badge neutral">{selectedPatient ? `Documento ${selectedPatient.document}` : 'Sin ficha clínica activa'}</span>
-            <span className={`badge ${canAccessClinical && selectedPatient ? 'info' : 'neutral'}`}>
-              {canAccessClinical && selectedPatient ? 'Ficha clínica editable' : 'Ficha clínica no abierta'}
-            </span>
-            <span className="badge neutral">Evoluciones: {selectedPatient && canAccessClinical ? encounters.length : 0}</span>
-            <span className="badge neutral">Notas clínicas: {selectedPatient && canAccessClinical ? patientClinicalNotes.length : 0}</span>
-          </>
+          <dl className="contextual-metadata" aria-label="Datos compactos del paciente">
+            <div className="contextual-metadata-item">
+              <dt>Documento</dt>
+              <dd>{selectedPatient ? selectedPatient.document : 'Sin paciente seleccionado'}</dd>
+            </div>
+            <div className="contextual-metadata-item">
+              <dt>Ficha</dt>
+              <dd>{canAccessClinical && selectedPatient ? 'Editable' : 'No abierta'}</dd>
+            </div>
+            <div className="contextual-metadata-item">
+              <dt>Evoluciones</dt>
+              <dd>{selectedPatient && canAccessClinical ? encounters.length : 0}</dd>
+            </div>
+            <div className="contextual-metadata-item">
+              <dt>Notas clínicas</dt>
+              <dd>{selectedPatient && canAccessClinical ? patientClinicalNotes.length : 0}</dd>
+            </div>
+          </dl>
         )}
-        feedback={(successMessage || patientsError || !selectedPatient) ? (
-          <>
-            {successMessage ? <span className="badge success">{successMessage}</span> : null}
-            {patientsError ? <span className="badge error">{patientsError}</span> : null}
-            {!selectedPatient ? <span className="helper">El header no implica una ficha clínica activa.</span> : null}
-          </>
-        ) : undefined}
       />
 
-      <div className="stack patients-main">
-          <SectionCard className="stack patients-section patients-section-summary" aria-label="Resumen del paciente">
-            <div className="section-header">
-              <div>
-                <h3>Resumen del paciente</h3>
-                <p>{canAccessClinical ? 'Ficha básica para contexto rápido antes de una tarea clínica.' : 'Ficha básica para verificar datos sin abrir trabajo clínico.'}</p>
-              </div>
-              {selectedPatient ? <span className="pill">Activo</span> : null}
+      <div className="patient-status-strip" aria-label="Estado de pacientes">
+        {patientContextFeedback}
+      </div>
+
+      {isBootstrapping ? (
+        <div className="empty-state empty-state-soft patient-context-message">Cargando pacientes...</div>
+      ) : activePatients.length === 0 ? (
+        <div className="empty-state patient-context-message">
+          <strong>No hay pacientes activos</strong>
+          <span>Cargalos desde Directorio para que esta vista tenga casos reales de demo.</span>
+          {isSecretaryOperational && onOpenDirectorySupport ? (
+            <button className="button secondary" type="button" onClick={onOpenDirectorySupport}>
+              Abrir soporte de directorio
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          {isSelectedPatientHiddenByFilter ? (
+            <div className="inline-note patient-context-message" aria-live="polite">
+              <strong>Tenés seleccionado a {selectedPatient?.first_name} {selectedPatient?.last_name}; el filtro actual lo ocultó de la lista.</strong>
             </div>
+          ) : null}
 
-            {!selectedPatient ? (
-              <div className="empty-state">
-                <strong>Seleccioná un paciente</strong>
-                <span>Cuando elijas uno, vas a ver su resumen y el alcance habilitado para este actor.</span>
-              </div>
-            ) : (
-              <>
-                <div className="patient-summary-grid">
-                  <article className="overview-card">
-                    <span className="summary-label">Paciente</span>
-                    <strong>
-                      {selectedPatient.first_name} {selectedPatient.last_name}
-                    </strong>
-                    <small>ID {selectedPatient.id}</small>
-                  </article>
-                  <article className="overview-card">
-                    <span className="summary-label">Documento</span>
-                    <strong>{selectedPatient.document}</strong>
-                    <small>Nacimiento: {formatDate(selectedPatient.birth_date)}</small>
-                  </article>
-                  <article className="overview-card">
-                    <span className="summary-label">Contacto</span>
-                    <strong>{selectedPatient.phone || 'Sin teléfono'}</strong>
-                    <small>{selectedPatient.email || 'Sin email cargado'}</small>
-                  </article>
-                  <article className="overview-card">
-                    <span className="summary-label">Modo</span>
-                    <strong>{canAccessClinical ? 'Clínico' : 'Operativo'}</strong>
-                    <small>
-                      {canAccessClinical
-                        ? `professional_id ${patientsMode.professionalId}`
-                        : 'Sin lectura ni escritura de encounters clínicos'}
-                    </small>
-                  </article>
-                </div>
+          {!shouldShowSearchDropdown && hasActiveSearchQuery && filteredPatients.length === 0 ? (
+            <div className="inline-note patient-context-message" aria-live="polite">
+              <strong>No hay resultados visibles para el filtro actual.</strong>
+            </div>
+          ) : null}
+        </>
+      )}
 
-                <div className="inline-note">
-                  {canAccessClinical
-                    ? 'Este alcance es INTENCIONALMENTE chico: solo encounters con nota inicial. Nada de timeline clínica completa, recetas ni estudios todavía.'
-                    : 'Secretaría puede seleccionar y verificar datos del paciente, pero NO abrir trabajo clínico ni registrar evoluciones.'}
-                </div>
-              </>
-            )}
-          </SectionCard>
-
-          <SectionCard className="stack patients-section patients-section-ficha" aria-label="Ficha clínica editable">
+      <div className="patients-main" aria-label="Historia clínica del paciente">
+        <section className="patients-column patients-profile-column" aria-label="Ficha clínica prioritaria">
+          <SectionCard className="stack patients-section patients-section-ficha" aria-label="Ficha del paciente">
             <div className="section-header">
               <div>
-                <h3>Ficha clínica</h3>
-                <p>Estado editable del paciente. Separada de notas, consultas, evoluciones, recetas y estudios.</p>
+                <h3>Ficha del paciente</h3>
+                <p>Ficha clínica persistente.</p>
               </div>
               {canAccessClinical && selectedPatientId ? (
                 <button className="button secondary" type="button" onClick={() => void loadClinicalHistory(selectedPatientId)} disabled={isLoadingHistory}>
@@ -786,6 +756,26 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
               <div className="empty-state empty-state-soft">Cargando ficha clínica...</div>
             ) : (
               <>
+                <div className="patient-summary-grid patient-summary-grid-compact" aria-label="Datos básicos del paciente">
+                  <article className="overview-card">
+                    <span className="summary-label">Paciente</span>
+                    <strong>
+                      {selectedPatient.first_name} {selectedPatient.last_name}
+                    </strong>
+                    <small>Documento {selectedPatient.document}</small>
+                  </article>
+                  <article className="overview-card">
+                    <span className="summary-label">Contacto</span>
+                    <strong>{selectedPatient.phone || 'Sin teléfono'}</strong>
+                    <small>{selectedPatient.email || 'Sin email cargado'}</small>
+                  </article>
+                  <article className="overview-card">
+                    <span className="summary-label">Nacimiento</span>
+                    <strong>{formatDate(selectedPatient.birth_date)}</strong>
+                    <small>{canAccessClinical ? 'Acceso clínico habilitado' : 'Vista operativa'}</small>
+                  </article>
+                </div>
+
                 <div className="form-grid">
                   <div className="field">
                     <label htmlFor="history-weight">Peso (kg)</label>
@@ -824,22 +814,26 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                   <button className="button" type="button" onClick={() => void handleSaveClinicalHistory()} disabled={!selectedPatientId || isSavingHistory}>
                     {isSavingHistory ? 'Guardando...' : 'Guardar ficha'}
                   </button>
-                  <span className="helper helper-inline">No actualiza notas ni evoluciones automáticamente.</span>
+                  <span className="helper helper-inline">Ficha del paciente</span>
                 </div>
               </>
             )}
           </SectionCard>
+        </section>
 
-          <SectionCard className="stack patients-section patients-section-notes" aria-label="Notas clínicas por paciente">
+        <section className="patients-column patients-timeline-column" aria-label="Historial clínico">
+          <SectionCard className="stack patients-section patients-section-notes" aria-label="Notas clínicas del historial">
             <div className="section-header">
               <div>
-                <h3>Notas clínicas por paciente</h3>
-                <p>Artefactos de nota separados de la ficha; pueden estar vinculados a una consulta o quedar sin vínculo.</p>
+                <h3>Historial clínico</h3>
+                <p>Evoluciones y notas registradas sobre el paciente.</p>
               </div>
               {canAccessClinical && selectedPatientId ? (
-                <button className="button secondary" type="button" onClick={() => void loadClinicalNotes(selectedPatientId)} disabled={isLoadingClinicalNotes}>
-                  {isLoadingClinicalNotes ? 'Actualizando...' : 'Recargar notas'}
-                </button>
+                <div className="toolbar">
+                  <button className="button secondary" type="button" onClick={() => void loadClinicalNotes(selectedPatientId)} disabled={isLoadingClinicalNotes}>
+                    {isLoadingClinicalNotes ? 'Actualizando...' : 'Recargar notas'}
+                  </button>
+                </div>
               ) : null}
             </div>
 
@@ -854,33 +848,14 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
               </div>
             ) : (
               <>
-                <div className="form-grid">
-                  <div className="field form-grid-span-full">
-                    <label htmlFor="patient-clinical-note-content">Nueva nota clínica</label>
-                    <textarea id="patient-clinical-note-content" value={clinicalNoteForm.content} onChange={(event) => setClinicalNoteForm((current) => ({ ...current, content: event.target.value }))} />
-                  </div>
-                  <div className="field form-grid-span-full">
-                    <label htmlFor="patient-clinical-note-consultation">Consulta asociada (UUID opcional)</label>
-                    <input id="patient-clinical-note-consultation" value={clinicalNoteForm.consultation_id} onChange={(event) => setClinicalNoteForm((current) => ({ ...current, consultation_id: event.target.value }))} />
-                  </div>
-                </div>
-
-                {clinicalNoteFormError ? <div className="inline-note inline-note-error">{clinicalNoteFormError}</div> : null}
-
-                <div className="toolbar">
-                  <button className="button" type="button" onClick={() => void handleCreateClinicalNote()} disabled={!selectedPatientId || isSavingClinicalNote}>
-                    {isSavingClinicalNote ? 'Guardando...' : 'Guardar nota clínica'}
-                  </button>
-                </div>
-
                 {isLoadingClinicalNotes ? (
                   <div className="empty-state empty-state-soft">Cargando notas clínicas...</div>
                 ) : patientClinicalNotes.length === 0 ? (
                   <div className="empty-state empty-state-soft">Sin notas clínicas por paciente todavía.</div>
                 ) : (
-                  <div className="list">
+                  <div className="list patients-timeline-list">
                     {patientClinicalNotes.map((note) => (
-                      <article key={note.id} className="encounter-card">
+                      <article key={note.id} className={`encounter-card patients-record-card patients-note-card${note.consultation_id ? ' patients-note-card-linked' : ''}`}>
                         {editingClinicalNoteId === note.id ? (
                           <>
                             <div className="field">
@@ -888,7 +863,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                               <textarea id={`edit-clinical-note-${note.id}`} value={editingClinicalNoteForm.content} onChange={(event) => setEditingClinicalNoteForm((current) => ({ ...current, content: event.target.value }))} />
                             </div>
                             <div className="field">
-                              <label htmlFor={`edit-clinical-note-consultation-${note.id}`}>Editar consulta asociada</label>
+                              <label htmlFor={`edit-clinical-note-consultation-${note.id}`}>Editar identificador de consulta asociada</label>
                               <input id={`edit-clinical-note-consultation-${note.id}`} value={editingClinicalNoteForm.consultation_id} onChange={(event) => setEditingClinicalNoteForm((current) => ({ ...current, consultation_id: event.target.value }))} />
                             </div>
                             <div className="toolbar">
@@ -903,13 +878,9 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                                 <span className="surface-tab-eyebrow">Nota clínica</span>
                                 <h4>{formatDateTime(note.created_at)}</h4>
                               </div>
-                              <span className="badge neutral">{note.consultation_id ? 'Vinculada a consulta' : 'Independiente'}</span>
+                              <span className={`badge ${note.consultation_id ? 'info' : 'neutral'}`}>{note.consultation_id ? 'Vinculada a consulta' : 'Nota del paciente'}</span>
                             </div>
                             <p className="encounter-note">{note.content}</p>
-                            <div className="appointment-meta">
-                              <span className="muted">Profesional: {note.professional_id}</span>
-                              <span className="muted">Consulta: {note.consultation_id ?? 'sin vínculo'}</span>
-                            </div>
                             <div className="toolbar">
                               <button className="button secondary" type="button" onClick={() => startEditingClinicalNote(note)}>Editar nota clínica</button>
                               <button className="button secondary" type="button" onClick={() => void handleDeleteClinicalNote(note.id)}>Eliminar nota clínica</button>
@@ -928,7 +899,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
             <div className="section-header">
               <div>
                 <h3>Consultas y evoluciones</h3>
-                <p>Eventos clínicos ordenados por fecha; no forman parte de la ficha editable.</p>
+                <p>Actividad clínica del paciente.</p>
               </div>
               {canAccessClinical ? (
                 <button
@@ -948,7 +919,7 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
               <div className="empty-state empty-state-soft">Elegí un paciente para ver su alcance disponible.</div>
             ) : !canAccessClinical ? (
               <div className="empty-state">
-                <strong>Encounters clínicos bloqueados</strong>
+                <strong>Evoluciones bloqueadas</strong>
                 <span>{clinicalDeniedMessage}</span>
                 {isSecretaryOperational && activePatients.length === 0 && onOpenDirectorySupport ? (
                   <button className="button secondary" type="button" onClick={onOpenDirectorySupport}>
@@ -957,28 +928,24 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                 ) : null}
               </div>
             ) : isLoadingEncounters ? (
-              <div className="empty-state empty-state-soft">Cargando encounters...</div>
+              <div className="empty-state empty-state-soft">Cargando evoluciones...</div>
             ) : encounters.length === 0 ? (
               <div className="empty-state">
-                <strong>Sin encounters todavía</strong>
+                <strong>Sin evoluciones todavía</strong>
                 <span>Registrá abajo una nota breve para dejar la primera evolución de esta demo.</span>
               </div>
             ) : (
-              <div className="list">
+              <div className="list patients-timeline-list">
                 {encounters.map((encounter) => (
-                  <article key={encounter.id} className="encounter-card">
+                  <article key={encounter.id} className="encounter-card patients-record-card patients-evolution-card">
                     <div className="section-header">
                       <div>
-                        <span className="surface-tab-eyebrow">Encounter</span>
+                        <span className="surface-tab-eyebrow">Evolución</span>
                         <h4>{formatDateTime(encounter.occurred_at)}</h4>
                       </div>
-                      <span className="badge neutral">{encounter.initial_note.kind}</span>
+                      <span className="badge neutral">Nota clínica</span>
                     </div>
                     <p className="encounter-note">{encounter.initial_note.content}</p>
-                    <div className="appointment-meta">
-                      <span className="muted">Creado: {formatDateTime(encounter.created_at)}</span>
-                      <span className="muted">Profesional: {encounter.professional_id}</span>
-                    </div>
                   </article>
                 ))}
               </div>
@@ -991,8 +958,8 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                 <h3>Nueva nota / evolución</h3>
                 <p>
                   {canAccessClinical
-                    ? 'Formulario corto para registrar una observación inicial solo cuando el actor tiene alcance clínico.'
-                    : 'Secretaría no recibe formulario clínico en esta línea base.'}
+                    ? 'Registrar actividad clínica.'
+                    : 'Acceso clínico no disponible.'}
                 </p>
               </div>
             </div>
@@ -1032,17 +999,56 @@ export function PatientsWorkspace({ patientsMode, onSessionInvalid, onOpenDirect
                   >
                     {isCreatingEncounter ? 'Guardando...' : 'Guardar nota'}
                   </button>
-                  <span className="helper helper-inline">Sin router, sin wizard, sin historia clínica completa.</span>
+                  <span className="helper helper-inline">Se agrega a evoluciones</span>
                 </div>
               </>
             ) : (
               <div className="empty-state">
                 <strong>Trabajo clínico oculto para secretaría</strong>
-                <span>Esta línea base deja solo lista y resumen de pacientes. La escritura clínica sigue reservada al actor médico.</span>
+                <span>Esta vista deja solo búsqueda y datos operativos. La escritura clínica sigue reservada al actor médico.</span>
               </div>
             )}
           </SectionCard>
+        </section>
       </div>
+
+      {isClinicalNoteDialogOpen ? (
+        <div className="patients-modal-backdrop" role="presentation">
+          <section className="card patients-modal stack" role="dialog" aria-modal="true" aria-labelledby="patient-clinical-note-dialog-title">
+            <div className="section-header">
+              <div>
+                <h3 id="patient-clinical-note-dialog-title">Nueva nota clínica</h3>
+                <p>Agregá una nota al historial del paciente seleccionado.</p>
+              </div>
+              <button className="button secondary" type="button" onClick={closeClinicalNoteDialog}>
+                Cerrar
+              </button>
+            </div>
+
+            <div className="form-grid">
+              <div className="field form-grid-span-full">
+                <label htmlFor="patient-clinical-note-content">Contenido de la nota clínica</label>
+                <textarea id="patient-clinical-note-content" value={clinicalNoteForm.content} onChange={(event) => setClinicalNoteForm((current) => ({ ...current, content: event.target.value }))} />
+              </div>
+              <div className="field form-grid-span-full">
+                <label htmlFor="patient-clinical-note-consultation">Identificador de consulta asociada (opcional)</label>
+                <input id="patient-clinical-note-consultation" value={clinicalNoteForm.consultation_id} onChange={(event) => setClinicalNoteForm((current) => ({ ...current, consultation_id: event.target.value }))} />
+              </div>
+            </div>
+
+            {clinicalNoteFormError ? <div className="inline-note inline-note-error">{clinicalNoteFormError}</div> : null}
+
+            <div className="toolbar">
+              <button className="button" type="button" onClick={() => void handleCreateClinicalNote()} disabled={!selectedPatientId || isSavingClinicalNote}>
+                {isSavingClinicalNote ? 'Guardando...' : 'Guardar nota clínica'}
+              </button>
+              <button className="button secondary" type="button" onClick={closeClinicalNoteDialog}>
+                Cancelar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </PageContainer>
   );
 }
